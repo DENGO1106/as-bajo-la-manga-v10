@@ -1,0 +1,2241 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>AS BAJO LA MANGA</title>
+
+    <!-- PWA Meta Tags -->
+    <meta name="description" content="Juego de cartas interactivo con Toxic Cards, Poker Caliente y El Sabio del Guaro">
+    <meta name="theme-color" content="#020617">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ABLM">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🔥</text></svg>">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: #020617;
+            color: #f8fafc;
+            overflow-x: hidden;
+            overscroll-behavior-y: contain;
+            width: 100%;
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        html {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        #game-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: 2rem;
+        }
+
+        .glass {
+            background: rgba(15, 23, 42, 0.7);
+            -webkit-backdrop-filter: blur(12px);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(212, 175, 55, 0.1);
+        }
+
+        .gold-border {
+            border: 1px solid rgba(212, 175, 55, 0.3);
+        }
+
+        .card-shadow {
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.7), 0 10px 10px -5px rgba(0, 0, 0, 0.5);
+        }
+
+        .gold-text {
+            color: #D4AF37;
+        }
+
+        .gradient-gold {
+            background: linear-gradient(135deg, #FFD700 0%, #D4AF37 50%, #B8860B 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .bg-gold {
+            background: linear-gradient(135deg, #FFD700 0%, #D4AF37 100%);
+        }
+
+        .btn-hover {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .btn-hover:active {
+            transform: scale(0.95);
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        .card-enter {
+            animation: cardEnter 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        @keyframes cardEnter {
+            0% {
+                opacity: 0;
+                transform: rotateY(-10deg) scale(0.9) translateY(20px);
+            }
+
+            100% {
+                opacity: 1;
+                transform: rotateY(0) scale(1) translateY(0);
+            }
+        }
+
+        /* Advanced Interactive Animations */
+        @keyframes cardFlip {
+            0% {
+                transform: perspective(1000px) rotateY(0deg);
+            }
+
+            50% {
+                transform: perspective(1000px) rotateY(90deg);
+                opacity: 0.5;
+            }
+
+            100% {
+                transform: perspective(1000px) rotateY(0deg);
+            }
+        }
+
+        .card-flip {
+            animation: cardFlip 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes shake {
+
+            0%,
+            100% {
+                transform: translateX(0);
+            }
+
+            10%,
+            30%,
+            50%,
+            70%,
+            90% {
+                transform: translateX(-4px);
+            }
+
+            20%,
+            40%,
+            60%,
+            80% {
+                transform: translateX(4px);
+            }
+        }
+
+        .shake {
+            animation: shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+        }
+
+        @keyframes slideInLeft {
+            from {
+                opacity: 0;
+                transform: translateX(-100%);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes slideInRight {
+            from {
+                opacity: 0;
+                transform: translateX(100%);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .slide-in-left {
+            animation: slideInLeft 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .slide-in-right {
+            animation: slideInRight 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Ripple Effect */
+        .ripple {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .ripple::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+
+        .ripple:active::after {
+            width: 300px;
+            height: 300px;
+        }
+
+        /* Pulse Animation */
+        @keyframes pulse {
+
+            0%,
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            50% {
+                transform: scale(1.05);
+                opacity: 0.8;
+            }
+        }
+
+        .pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        /* Glow Effect */
+        @keyframes glow {
+
+            0%,
+            100% {
+                box-shadow: 0 0 5px rgba(212, 175, 55, 0.3);
+            }
+
+            50% {
+                box-shadow: 0 0 20px rgba(212, 175, 55, 0.6), 0 0 30px rgba(212, 175, 55, 0.4);
+            }
+        }
+
+        .glow {
+            animation: glow 2s ease-in-out infinite;
+        }
+
+        /* Touch Feedback */
+        .touch-feedback {
+            position: relative;
+            transform: scale(1);
+            transition: transform 0.1s ease;
+        }
+
+        .touch-feedback:active {
+            transform: scale(0.97);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #D4AF37;
+            border-radius: 10px;
+        }
+
+        .tab-active {
+            border-bottom: 3px solid #D4AF37;
+            color: #D4AF37;
+            transition: all 0.3s ease;
+        }
+
+        /* Swipe Indicator */
+        .swipe-indicator {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.3);
+            pointer-events: none;
+            z-index: 40;
+        }
+
+        /* Mobile Optimizations */
+        @media (max-width: 768px) {
+
+            /* Ensure minimum touch target size */
+            button,
+            a,
+            input[type="button"] {
+                min-height: 44px;
+                min-width: 44px;
+            }
+
+            /* Better thumb reach zones */
+            .btn-hover {
+                padding: 1rem !important;
+            }
+
+            /* Optimize typography for small screens */
+            h1 {
+                font-size: clamp(1.25rem, 5vw, 2rem);
+            }
+
+            h2 {
+                font-size: clamp(1rem, 4vw, 1.5rem);
+            }
+
+            h3 {
+                font-size: clamp(0.875rem, 3.5vw, 1.25rem);
+            }
+
+            p,
+            span {
+                font-size: clamp(0.75rem, 3vw, 1rem);
+            }
+
+            /* Improve card sizing on small screens */
+            .glass.rounded-\[2\.5rem\] {
+                min-height: 350px !important;
+            }
+
+            /* Better spacing for mobile */
+            .space-y-4>*+* {
+                margin-top: 1.2rem;
+            }
+
+            .space-y-8>*+* {
+                margin-top: 2rem;
+            }
+        }
+
+        /* Landscape mobile optimization */
+        @media (max-height: 500px) and (orientation: landscape) {
+
+            .min-h-\[60vh\],
+            .min-h-\[400px\] {
+                min-height: 280px !important;
+            }
+
+            .space-y-8>*+* {
+                margin-top: 1rem;
+            }
+        }
+
+        /* Prevent text selection during gestures */
+        .no-select {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        /* Prevent pull-to-refresh on mobile browsers */
+        body {
+            overscroll-behavior-y: contain;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header id="app-header" class="p-6 flex items-center justify-between sticky top-0 z-50 glass mb-4">
+        <button type="button" id="back-btn" onclick="changeView('menu')" aria-label="Volver al menú"
+            class="hidden p-2 rounded-full hover:bg-slate-800 transition-colors ripple touch-feedback">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m15 18-6-6 6-6" />
+            </svg>
+        </button>
+        <h1 id="header-title" class="text-xl font-bold tracking-tighter gradient-gold uppercase">As Bajo La Manga</h1>
+        <div class="w-10"></div> <!-- Spacer -->
+    </header>
+
+    <main id="game-container" class="flex-grow container mx-auto px-4 pb-12 max-w-md">
+        <!-- Views will be injected here -->
+    </main>
+
+    <script>
+        // --- Data ---
+        const TOXIC_CARDS = [{ id: 1, cat: "VERDAD INCÓMODA", title: "La Canción Culpable", text: "Nombra una canción que amas en secreto y que te da vergüenza admitir.", drink: "2 Tragos" }, { id: 2, cat: "VERDAD INCÓMODA", title: "La Peor Cita", text: "Describe la cita más desastrosa que has tenido, en 30 segundos.", drink: "3 Tragos" }, { id: 3, cat: "VERDAD INCÓMODA", title: "La Infidelidad de la Amistad", text: "¿Alguna vez le has mentido a alguien en este grupo sobre un tema importante? Di sobre qué.", drink: "2 Tragos / Si mientes, 3 Tragos" }, { id: 4, cat: "VERDAD INCÓMODA", title: "El Secreto del Teléfono", text: "Muestra la última foto que tomaste con tu teléfono (si es personal, descríbela sin mostrarla).", drink: "1 Trago" }, { id: 5, cat: "VERDAD INCÓMODA", title: "¿Ficción o Realidad?", text: "¿Cuál es la cosa más extraña o ilegal que has buscado en Google?", drink: "2 Tragos" }, { id: 6, cat: "VERDAD INCÓMODA", title: "Un Vicio Oculto", text: "¿Cuál es el hábito más irritante que tienes y que nadie de este grupo conoce?", drink: "3 Tragos" }, { id: 7, cat: "VERDAD INCÓMODA", title: "Robo Menor", text: "¿Cuál fue la última cosa que robaste (aunque fuera un bolígrafo en el trabajo)?", drink: "1 Trago" }, { id: 8, cat: "VERDAD INCÓMODA", title: "La Travesura de Niñez", text: "Describe la travesura de niño que tuvo las peores consecuencias para ti o para otro.", drink: "2 Tragos" }, { id: 9, cat: "VERDAD INCÓMODA", title: "El Crush del Grupo", text: "Si pudieras elegir a una persona en este círculo para una cita, ¿quién sería?", drink: "3 Tragos" }, { id: 10, cat: "VERDAD INCÓMODA", title: "El Momento Más Bajo", text: "Cuenta el momento más vergonzoso que recuerdes de tu vida.", drink: "2 Tragos" }, { id: 11, cat: "VERDAD INCÓMODA", title: "Lo Que No Dices", text: "¿Cuál fue el último chisme jugoso que escuchaste y que no le has contado a nadie del grupo?", drink: "3 Tragos" }, { id: 12, cat: "VERDAD INCÓMODA", title: "El Favor Sexual", text: "Describe la situación más incómoda o inapropiada en la que has usado tu encanto para conseguir algo.", drink: "3 Tragos" }, { id: 13, cat: "VERDAD INCÓMODA", title: "El Gran Gasto", text: "¿En qué gastaste una cantidad considerable de dinero recientemente y te arrepentiste al instante?", drink: "2 Tragos" }, { id: 14, cat: "VERDAD INCÓMODA", title: "¿Fui Grosero?", text: "Nombra a una persona de este grupo que te haya caído mal al conocerla y por qué.", drink: "3 Tragos" }, { id: 15, cat: "VERDAD INCÓMODA", title: "El Error de Redes", text: 'Muestra un "Me Gusta" o comentario vergonzoso que dejaste en redes sociales.', drink: "1 Trago" }, { id: 16, cat: "VERDAD INCÓMODA", title: "El Voto Anónimo", text: "Vota anónimamente si has besado a alguien en este grupo (que no sea tu pareja actual).", drink: 'Si votas "Si", bebe 2 Tragos' }, { id: 17, cat: "VERDAD INCÓMODA", title: "La Mentira Blanca", text: "¿Cuál es la mentira más común que usas para cancelar planes o excusarte?", drink: "2 Tragos" }, { id: 18, cat: "VERDAD INCÓMODA", title: "El Objeto Perdido", text: "¿Qué es lo más valioso o sentimental que has roto o perdido por tu culpa?", drink: "3 Tragos" }, { id: 19, cat: "VERDAD INCÓMODA", title: "El Apodo", text: "¿Cuál es el apodo más ridículo que te han puesto y por qué?", drink: "1 Trago" }, { id: 20, cat: "VERDAD INCÓMODA", title: "El Peor Regalo", text: "Nombra el peor regalo que te ha dado alguien en este grupo.", drink: "2 Tragos" }, { id: 21, cat: "VERDAD INCÓMODA", title: "El Robo de Comida", text: "¿Qué comida de alguien en este grupo le has robado o te has comido sin permiso?", drink: "2 Tragos" }, { id: 22, cat: "VERDAD INCÓMODA", title: "¿Fui Infiel?", text: 'Confiesa la infidelidad más pequeña o la "casi infidelidad" que has cometido.', drink: "3 Tragos" }, { id: 23, cat: "VERDAD INCÓMODA", title: "El Rencor", text: "¿A quién de este grupo le guardas algún resentimiento o te debe una disculpa? Di por qué.", drink: "3 Tragos" }, { id: 24, cat: "VERDAD INCÓMODA", title: "La Mentira de Currículum", text: "¿Cuál es la habilidad o experiencia que pusiste en tu CV y que es totalmente falsa?", drink: "2 Tragos" }, { id: 25, cat: "VERDAD INCÓMODA", title: "La Cuenta de Ahorros", text: "Muestra tu saldo bancario actual. Si te niegas, bebes.", drink: "3 Tragos si te niegas" }, { id: 26, cat: "VERDAD INCÓMODA", title: "El Sueño Prohibido", text: "¿Cuál es el sueño erótico más extraño que has tenido con alguien de la vida real?", drink: "3 Tragos" }, { id: 27, cat: "VERDAD INCÓMODA", title: "La Cita con Famoso", text: "¿Con qué famoso saldrías aunque sea odiado por todos?", drink: "1 Trago" }, { id: 28, cat: "VERDAD INCÓMODA", title: "El Olor", text: "¿Cuál es tu olor corporal (no perfume) favorito en otra persona?", drink: "2 Tragos" }, { id: 29, cat: "VERDAD INCÓMODA", title: "La Deuda", text: "¿A quién en esta mesa le debes dinero o un favor importante?", drink: "2 Tragos" }, { id: 30, cat: "VERDAD INCÓMODA", title: "La Mala Costumbre", text: "¿Cuál es tu mala costumbre más antihigiénica?", drink: "3 Tragos" }, { id: 31, cat: "RETO EXPRESS", title: "El Sonido del Delfín", text: "Imita el sonido de un delfín hasta que 3 personas en el grupo adivinen lo que es.", drink: "2 Tragos" }, { id: 32, cat: "RETO EXPRESS", title: "El Zapato Ajeno", text: "Cámbiate un zapato con la persona a tu derecha y úsalo hasta tu próximo turno.", drink: "1 Trago" }, { id: 33, cat: "RETO EXPRESS", title: "El Retrato Ciego", text: "Dibuja un retrato del jugador a tu izquierda con los ojos cerrados. El grupo vota si es reconocible.", drink: "3 Tragos si no es reconocible" }, { id: 34, cat: "RETO EXPRESS", title: "La Llama de la Piel", text: "Intenta lamer tu codo. Si lo logras, asigna 3 tragos. Si no, bebe 2.", drink: "2 Tragos si no lo intentas" }, { id: 35, cat: "RETO EXPRESS", title: "Vístete", text: 'Usa una prenda de ropa al revés (o póntela sobre tu cabeza) hasta que salga otro "Reto Express".', drink: "1 Trago" }, { id: 36, cat: "RETO EXPRESS", title: "Declaración Pública", text: 'Ve a la calle o a otra habitación y grita: "¡Soy un genio de las matemáticas!".', drink: "2 Tragos" }, { id: 37, cat: "RETO EXPRESS", title: "El Equilibrista", text: "Párate en una sola pierna y cuenta hasta 20 en voz alta. Si te caes, bebes.", drink: "1 Trago" }, { id: 38, cat: "RETO EXPRESS", title: "Mensaje al Ex", text: 'Envía un mensaje de texto a tu ex (o a la última persona que saliste) diciendo: "Hoy tengo sueños húmedos contigo". ¡Muéstralo!', drink: "3 Tragos" }, { id: 39, cat: "RETO EXPRESS", title: "Stand-Up de 10 Segundos", text: "Haz un chiste o imita a un famoso durante 10 segundos. Si nadie se ríe, bebes 3.", drink: "3 Tragos" }, { id: 40, cat: "RETO EXPRESS", title: "La Estatua", text: "Permanece inmóvil y en silencio con los brazos en alto hasta que alguien te haga una pregunta.", drink: "2 Tragos si te mueves o hablas" }, { id: 41, cat: "RETO EXPRESS", title: "El Robot", text: 'Camina como un robot y di "¡Exterminar!" al menos 5 veces mientras recorres la sala.', drink: "2 Tragos" }, { id: 42, cat: "RETO EXPRESS", title: "La Misión Imposible", text: "Pide a alguien que te preste un calcetín y póntelo en una mano como si fuera un guante. Úsalo hasta tu próximo turno.", drink: "1 Trago" }, { id: 43, cat: "RETO EXPRESS", title: "El Desafío del Hielo", text: "Coloca un cubo de hielo en tu cuello y no lo retires hasta que se derrita o tú bebas.", drink: "3 Tragos" }, { id: 44, cat: "RETO EXPRESS", title: "¡Selfie Cómica!", text: "Toma una selfie con el jugador a tu izquierda haciendo la cara más fea que puedas. Muéstrala al grupo.", drink: "2 Tragos" }, { id: 45, cat: "RETO EXPRESS", title: "El Baile de la Botella", text: "Haz un baile de 15 segundos usando una botella como micrófono.", drink: "3 Tragos si el grupo no aplaude" }, { id: 46, cat: "RETO EXPRESS", title: "El Teléfono Escondido", text: "Esconde tu teléfono en la ropa de otro jugador sin que se dé cuenta.", drink: "2 Tragos si te descubren" }, { id: 47, cat: "RETO EXPRESS", title: "Lengua de Vaca", text: "Lame tres objetos distintos de la mesa (¡limpios!) y describe su sabor.", drink: "3 Tragos si te niegas" }, { id: 48, cat: "RETO EXPRESS", title: "El Imitador", text: "Imita al anfitrión/dueño de la casa (o al jugador a tu derecha) durante 1 minuto.", drink: "2 Tragos si nadie reconoce la imitación" }, { id: 49, cat: "RETO EXPRESS", title: "El Grito de Guerra", text: "Inventa un grito de guerra para el grupo y haz que todos lo repitan 3 veces.", drink: "1 Trago si te lo repiten mal" }, { id: 50, cat: "RETO EXPRESS", title: "El Vendedor", text: "Intenta venderle un objeto común de la sala (ej. un cojín) a otro jugador usando solo 3 adjetivos.", drink: '3 Tragos si nadie lo "compra"' }, { id: 51, cat: "RETO EXPRESS", title: "¡5 Lagartijas!", text: "Haz 5 lagartijas (flexiones) o el grupo te asigna 3 tragos.", drink: "3 Tragos si no haces las lagartijas" }, { id: 52, cat: "RETO EXPRESS", title: "El Abrazo Inesperado", text: "Abraza fuertemente al jugador que menos esperas que lo haga.", drink: "1 Trago" }, { id: 53, cat: "RETO EXPRESS", title: "El Cantante de Ópera", text: "Canta una frase de una canción con voz de ópera.", drink: "2 Tragos si el grupo no adivina la canción" }, { id: 54, cat: "RETO EXPRESS", title: "El Desfile de Modas", text: "Desfila como modelo hasta la cocina y de vuelta.", drink: "2 Tragos" }, { id: 55, cat: "RETO EXPRESS", title: "El Tatuaje Falso", text: "Dibuja un tatuaje temporal con bolígrafo en el rostro de otro jugador.", drink: "3 Tragos si el jugador se niega" }, { id: 56, cat: "RETO EXPRESS", title: "El Cambio de Voz", text: "Habla con un acento extranjero (inglés, francés, etc.) hasta tu próximo turno.", drink: "1 Trago si olvidas el acento" }, { id: 57, cat: "RETO EXPRESS", title: "El Cónclave", text: "Todos pongan las manos en el centro de la mesa. El último en retirar la mano, bebe.", drink: "2 Tragos" }, { id: 58, cat: "RETO EXPRESS", title: "El Equilibrio del Teléfono", text: "Equilibra tu teléfono en tu frente durante 15 segundos sin usar las manos.", drink: "3 Tragos si se cae" }, { id: 59, cat: "RETO EXPRESS", title: "Pide Perdón", text: "Llama a alguien de tu familia (o amigo) y discúlpate por algo que no has hecho.", drink: "3 Tragos" }, { id: 60, cat: "RETO EXPRESS", title: "El Escondite", text: "Escóndete en la sala por 30 segundos sin que te encuentren.", drink: "2 Tragos si te encuentran" }, { id: 61, cat: "REGLA DE ORO", title: "La Mano Prohibida", text: "REGLA: No se permite señalar nada o a nadie con el dedo. Debes señalar con el codo.", drink: "1 Trago por cada vez que se señale con el dedo" }, { id: 62, cat: "REGLA DE ORO", title: "El Titán", text: 'REGLA: Cada vez que bebas, debes decir "¡Por la gloría del Tótem!".', drink: "1 Trago cada vez que se olvide la frase" }, { id: 63, cat: "REGLA DE ORO", title: "El Lenguaje Inclusivo", text: 'REGLA: Cada vez que uses la palabra "yo", debes agregar "el magnifico/a".', drink: "1 Trago por olvidar el adjetivo" }, { id: 64, cat: "REGLA DE ORO", title: "Sin Nombres", text: "REGLA: Está prohibido llamar a cualquier jugador por su nombre. Se deben usar solo apodos.", drink: "1 Trago por cada nombre propio" }, { id: 65, cat: "REGLA DE ORO", title: "El Guardián de la Copa", text: "REGLA: Tu vaso siempre debe estar en tu mano izquierda (o derecha, si eres zurdo). Si está en la mesa, bebes.", drink: "2 Tragos" }, { id: 66, cat: "REGLA DE ORO", title: "La Reverencia", text: "REGLA: Cada vez que un jugador se levante de su asiento o vuelva a él, debe hacer una pequeña reverencia.", drink: "1 Trago por olvidarlo" }, { id: 67, cat: "REGLA DE ORO", title: "Palabras Prohibidas", text: 'REGLA: La palabra "Sí" y "No" están prohibidas. Debes usar "Afirmativo" o "Negativo" en su lugar.', drink: '1 Trago por usar "Sí" o "No"' }, { id: 68, cat: "REGLA DE ORO", title: "El Eco", text: "REGLA: La última palabra de cada frase que digas debe ser repetida inmediatamente por el jugador a tu derecha.", drink: "1 Trago si olvidas la repetición" }, { id: 69, cat: "REGLA DE ORO", title: "El Gesto", text: "REGLA: Antes de beber cualquier cosa, debes tocarte la punta de la nariz.", drink: "1 Trago" }, { id: 70, cat: "REGLA DE ORO", title: "Sin Menciones", text: "REGLA: Está prohibido hablar de trabajo o estudios. El tema es completamente tabú.", drink: "3 Tragos" }, { id: 71, cat: "REGLA DE ORO", title: "El Vaso Cambiante", text: "REGLA: Todos deben mover su vaso un asiento a la derecha después de beber.", drink: "2 Tragos si bebes de tu vaso original" }, { id: 72, cat: "REGLA DE ORO", title: "La Mímica", text: "REGLA: Antes de hablar, debes hacer un gesto de mímica relacionado con el tema de conversación.", drink: "1 Trago si olvidas el gesto" }, { id: 73, cat: "REGLA DE ORO", title: "El Pirata", text: "REGLA: Todos deben mantener un ojo cerrado hasta que la regla sea anulada.", drink: "2 Tragos si abres los dos ojos" }, { id: 74, cat: "REGLA DE ORO", title: "La Risa Prohibida", text: "REGLA: Está prohibido reír. Solo se permite sonreír o gruñir.", drink: "3 Tragos si te ríes" }, { id: 75, cat: "REGLA DE ORO", title: "El Cantante", text: "REGLA: La última palabra de cada frase debe ser cantada.", drink: "1 Trago si no cantas la última palabra" }, { id: 76, cat: "REGLA DE ORO", title: "La Persona Especial", text: 'REGLA: Debes referirte al jugador a tu izquierda solo como "Mi Amor".', drink: "1 Trago si usas su nombre o un pronombre diferente" }, { id: 77, cat: "REGLA DE ORO", title: "El Tonto de la Mesa", text: "REGLA: El jugador que sacó esta carta debe beber 1 trago extra cada vez que alguien le dé a beber.", drink: "3 Tragos máx. en total" }, { id: 78, cat: "REGLA DE ORO", title: "El Silencio Absoluto", text: 'REGLA: Está prohibido usar la palabra "silencio", "callar" o cualquier sinónimo.', drink: "1 Trago si usas las palabras prohibidas" }, { id: 79, cat: "REGLA DE ORO", title: "La Prenda de Cabeza", text: "REGLA: Todos deben llevar una prenda de ropa en la cabeza (ej. un calcetín, pañuelo).", drink: "2 Tragos si te la quitas" }, { id: 80, cat: "REGLA DE ORO", title: "El Agradecimiento", text: 'REGLA: Cada vez que alguien te pase algo, debes decir "Muchas gracias, buen amigo".', drink: "1 Trago si olvidas agradecer" }, { id: 81, cat: "REGLA DE ORO", title: "El Cambio de Género", text: "REGLA: Debes referirte a todos los jugadores usando el género opuesto al real (él/ella).", drink: "2 Tragos si te equivocas" }, { id: 82, cat: "REGLA DE ORO", title: "El Teléfono de la Mesa", text: "REGLA: Todos los teléfonos deben estar boca abajo y apilados en el centro. El primero en tocar el teléfono, bebe 3.", drink: "3 Tragos si lo tocas" }, { id: 83, cat: "REGLA DE ORO", title: "El Toque de Rodilla", text: "REGLA: Tu rodilla debe estar tocando la rodilla de otro jugador en todo momento.", drink: "2 Tragos si rompes el contacto" }, { id: 84, cat: "REGLA DE ORO", title: "La Palmada", text: "REGLA: Después de cada turno, el jugador a la derecha debe darle una palmada en la espalda al jugador que acaba de jugar.", drink: "1 Trago si olvidas la palmada" }, { id: 85, cat: "REGLA DE ORO", title: "El Idioma Secreto", text: 'REGLA: Debes terminar cada frase con la palabra "Miau".', drink: '1 Trago si olvidas el "Miau"' }, { id: 86, cat: "REGLA DE ORO", title: "Sin Apoyar", text: "REGLA: Está prohibido apoyar la espalda en la silla o sofá.", drink: "2 Tragos si te apoyas" }, { id: 87, cat: "REGLA DE ORO", title: "El Color Peligroso", text: "REGLA: Está prohibido mencionar el color que lleva la persona a tu izquierda.", drink: "3 Tragos si mencionas el color" }, { id: 88, cat: "REGLA DE ORO", title: "La Voz Alta", text: "REGLA: El jugador que sacó la carta debe hablar el resto de la ronda en voz muy alta.", drink: "1 Trago si hablas bajo" }, { id: 89, cat: "REGLA DE ORO", title: "El Poeta", text: "REGLA: Cada frase debe rimar con la anterior.", drink: "2 Tragos si no rima" }, { id: 90, cat: "REGLA DE ORO", title: "La Afirmación", text: 'REGLA: Cada vez que hables, debes empezar tu frase con la palabra "Claramente...".', drink: "1 Trago si olvidas el inicio" }, { id: 91, cat: "DUELO 1 VS 1", title: "Carrera de Dedos", text: "Elige un oponente. Ambos colocan un dedo índice en la mesa. El primero en mover el suyo, bebe.", drink: "Perdedor bebe 2 Tragos" }, { id: 92, cat: "DUELO 1 VS 1", title: "El Espejo", text: "Elige un oponente. Uno hace un gesto, el otro debe imitarlo a la perfección. El grupo vota quién lo hizo mejor.", drink: "Perdedor bebe 3 Tragos" }, { id: 93, cat: "DUELO 1 VS 1", title: "Adivina la Canción", text: "Elige un oponente. Tararea una canción. Si el oponente la adivina antes de 10 segundos, tú bebes. Si no, él bebe.", drink: "Ganador asigna 2 Tragos, perdedor bebe 2" }, { id: 94, cat: "DUELO 1 VS 1", title: "Suma Rápida", text: "Elige un oponente. Digan números del 1 al 10. El primero en decir el número que hace que la suma total llegue a 50, pierde.", drink: "Perdedor bebe 1 Trago" }, { id: 95, cat: "DUELO 1 VS 1", title: "El Viento", text: "Elige un oponente. Ambos soplan una carta/servilleta sobre la mesa. El que logre moverla la mayor distancia, gana.", drink: "Perdedor bebe 2 Tragos" }, { id: 96, cat: "DUELO 1 VS 1", title: "El Desafío de la Cuchara", text: "Elige un oponente. Con una cuchara en la boca, deben tocar las cucharas sin tocarse la cara. El primero en tocar, gana.", drink: "Perdedor bebe 3 Tragos" }, { id: 97, cat: "DUELO 1 VS 1", title: "El Mentiroso", text: "Elige un oponente. Ambos cuentan una anécdota (una verdadera y una falsa). El que adivina mal, bebe.", drink: "Cada uno bebe 2 Tragos si adivinan mal" }, { id: 98, cat: "DUELO 1 VS 1", title: "Piedra, Papel, Codo", text: "Juega Piedra, Papel o Tijera contra la persona a tu derecha. Al mejor de tres.", drink: "Perdedor bebe 2 Tragos" }, { id: 99, cat: "DUELO 1 VS 1", title: "¿Qué Prefieres?", text: 'Elige un oponente. Pregúntale un "Qué Prefieres" incómodo. Si duda más de 5 segundos en responder, bebe.', drink: "Si duda, bebe 1 Trago" }, { id: 100, cat: "DUELO 1 VS 1", title: "Traba Lenguas", text: "Elige un oponente. Ambos deben decir el trabalenguas 3 veces sin equivocarse.", drink: "El primero en equivocarse bebe 2 Tragos" }, { id: 101, cat: "DUELO 1 VS 1", title: "La Mirada Fija", text: "Elige un oponente. Míralo a los ojos fijamente. El primero en parpadear o reír, pierde.", drink: "Perdedor bebe 2 Tragos" }, { id: 102, cat: "DUELO 1 VS 1", title: "Las 5 Palabras", text: 'Elige un oponente. Cada uno debe decir 5 palabras que rimen con "corazón". El primero en repetir o fallar, pierde.', drink: "Perdedor bebe 3 Tragos" }, { id: 103, cat: "DUELO 1 VS 1", title: "El Conteo Inverso", text: "Elige un oponente. Cuenten del 10 al 1. El primero en dudar o equivocarse, pierde.", drink: "Perdedor bebe 1 Trago" }, { id: 104, cat: "DUELO 1 VS 1", title: "Guerra de Pulgares", text: "Elige un oponente para una guerra de pulgares. El perdedor bebe.", drink: "Perdedor bebe 2 Tragos" }, { id: 105, cat: "DUELO 1 VS 1", title: "El Lápiz Equilibrista", text: "Elige un oponente. Equilibren un lápiz en un dedo por 10 segundos. El que lo deje caer, pierde.", drink: "Perdedor bebe 3 Tragos" }, { id: 106, cat: "DUELO 1 VS 1", title: "El Desafío de la Moneda", text: "Elige un oponente. Tira una moneda. El oponente adivina cara o cruz. Si falla, bebe.", drink: "Oponente bebe 2 Tragos" }, { id: 107, cat: "DUELO 1 VS 1", title: "Pregunta Imposible", text: "Elige un oponente. Hazle una pregunta de trivia. Si no sabe, bebe.", drink: "Oponente bebe 2 Tragos" }, { id: 108, cat: "DUELO 1 VS 1", title: "Batalla de Baile", text: "Elige un oponente. Tienen 10 segundos para hacer un paso de baile épico. El grupo vota.", drink: "Perdedor bebe 3 Tragos" }, { id: 109, cat: "DUELO 1 VS 1", title: "La Imitación Rápida", text: "Elige un oponente. Uno hace un sonido de animal. El otro debe repetirlo. El que falle la repetición, pierde.", drink: "Perdedor bebe 2 Tragos" }, { id: 110, cat: "DUELO 1 VS 1", title: "Cita de Película", text: "Elige un oponente. Uno dice una cita de película. El oponente debe decir de qué película es en 5 segundos.", drink: "Perdedor bebe 1 Trago" }, { id: 111, cat: "DUELO 1 VS 1", title: "Palabras Encadenadas", text: "Elige un oponente. Digan una palabra alternativamente. El primero en repetir o tardar más de 3 segundos, pierde.", drink: "Perdedor bebe 2 Tragos" }, { id: 112, cat: "DUELO 1 VS 1", title: "El Reto de la Pila", text: "Elige un oponente. Apilen 5 monedas/cartas una encima de la otra. El primero en hacer que la pila caiga, pierde.", drink: "Perdedor bebe 3 Tragos" }, { id: 113, cat: "DUELO 1 VS 1", title: "La Verdad o Trago", text: "Elige un oponente. Tú le haces una pregunta de Verdad Incómoda. Si se niega a responder, debe beber el doble (2x3).", drink: "Si se niega, bebe 3 Tragos" }, { id: 114, cat: "DUELO 1 VS 1", title: "El Minuto de Silencio", text: "Elige un oponente. Ambos deben permanecer en silencio absoluto durante 60 segundos. El que hable o haga ruido, pierde.", drink: "Perdedor bebe 3 Tragos" }, { id: 115, cat: "DUELO 1 VS 1", title: "La Piedra de la Suerte", text: "Elige a un oponente. Ambos lanzan una moneda. Si sale lo mismo, el que sacó la carta bebe. Si sale diferente, el oponente bebe.", drink: "El que beba, 2 Tragos" }, { id: 116, cat: "DUELO 1 VS 1", title: "Batalla de Títulos", text: "Elige un oponente. Nombren películas que empiecen con la letra 'A' de forma alternada.", drink: "Perdedor bebe 2 Tragos" }, { id: 117, cat: "DUELO 1 VS 1", title: "La Estatua Humana", text: "Elige un oponente. Ambos hacen una pose incómoda. El primero en moverse o reír, pierde.", drink: "Perdedor bebe 3 Tragos" }, { id: 118, cat: "DUELO 1 VS 1", title: "El Cuento de 3 Palabras", text: "Elige un oponente. Cuenten una historia alternando 3 palabras cada uno. El que rompa el flujo o se quede sin ideas, pierde.", drink: "Perdedor bebe 2 Tragos" }, { id: 119, cat: "DUELO 1 VS 1", title: "El Desafío del Nombre", text: "Elige un oponente. Tienen 10 segundos para escribir 10 nombres de personas que empiecen con 'M'. El que menos tenga, pierde.", drink: "Perdedor bebe 3 Tragos" }, { id: 120, cat: "DUELO 1 VS 1", title: "La Tómbola", text: "Elige a un oponente. Tú le asignas 3 tragos si no me convences de que le pases el castigo a otro jugador.", drink: "Oponente bebe 3 Tragos si no le convences" }, { id: 121, cat: "CASTIGO INSTANTÁNEO", title: "¡Cascada!", text: "Todos beben en cascada. El que sacó la carta empieza.", drink: "El último en parar bebe 2 Tragos extra" }, { id: 122, cat: "CASTIGO INSTANTÁNEO", title: "El Cumpleaños", text: "El jugador más joven del grupo bebe 3 tragos.", drink: "El jugador más joven bebe 3 Tragos" }, { id: 123, cat: "CASTIGO INSTANTÁNEO", title: "El Tótem Indeciso", text: "El jugador que sacó la carta debe beber 2 tragos por su mala suerte.", drink: "Jugador bebe 2 Tragos" }, { id: 124, cat: "CASTIGO INSTANTÁNEO", title: "¡A beber en pareja!", text: "Elige a la persona que más se parece a ti en el grupo. Ambos beben 2 tragos.", drink: "Ambos beben 2 Tragos" }, { id: 125, cat: "CASTIGO INSTANTÁNEO", title: "¡Los de Jeans!", text: "Todos los que estén usando pantalones de mezclilla (jeans) deben beber 1 trago.", drink: "Todos los de jeans beben 1 Trago" }, { id: 126, cat: "CASTIGO INSTANTÁNEO", title: "El Desastre", text: "Asigna 3 tragos a la persona que ha derramado algo últimamente.", drink: "Asigna 3 Tragos" }, { id: 127, cat: "CASTIGO INSTANTÁNEO", title: "¡Mala Suerte!", text: "Has sacado el peor castigo: ¡Todos beben 1 trago!", drink: "Todos beben 1 Trago" }, { id: 128, cat: "CASTIGO INSTANTÁNEO", title: "El Dueño de la Fiesta", text: "La persona que organizó la fiesta o es dueña de la casa bebe 3 tragos.", drink: "El anfitrión bebe 3 Tragos" }, { id: 129, cat: "CASTIGO INSTANTÁNEO", title: "El Grito Silencioso", text: "El jugador que sacó la carta debe beber 1 trago y no puede hablar hasta que 3 personas le hablen directamente.", drink: "Jugador bebe 1 Trago" }, { id: 130, cat: "CASTIGO INSTANTÁNEO", title: "El Último que Hable", text: "Cállense todos inmediatamente. El último que haya hablado antes de este anuncio, bebe 3 tragos.", drink: "Último en hablar bebe 3 Tragos" }, { id: 131, cat: "CASTIGO INSTANTÁNEO", title: "El Teléfono a la Vista", text: "Todos los que tengan el teléfono en la mano o sobre la mesa deben beber 2 tragos.", drink: "Bebe 2 Tragos" }, { id: 132, cat: "CASTIGO INSTANTÁNEO", title: "La Camisa de Botones", text: "Todos los que lleven una camisa con botones deben beber 1 trago.", drink: "Bebe 1 Trago" }, { id: 133, cat: "CASTIGO INSTANTÁNEO", title: "El Beber por la Izquierda", text: "El jugador a tu izquierda bebe 3 tragos.", drink: "Jugador de la izquierda bebe 3 Tragos" }, { id: 134, cat: "CASTIGO INSTANTÁNEO", title: "La Persona más Lejana", text: "Asigna 3 tragos a la persona que esté físicamente más lejos de ti.", drink: "Asigna 3 Tragos" }, { id: 135, cat: "CASTIGO INSTANTÁNEO", title: "El Color de la Suerte", text: "Elige un color. Todos los que lleven algo de ese color deben beber 2 tragos.", drink: "Bebe 2 Tragos" }, { id: 136, cat: "CASTIGO INSTANTÁNEO", title: "El Viajero", text: "Todos los que hayan viajado fuera del país en el último año beben 2 tragos.", drink: "Bebe 2 Tragos" }, { id: 137, cat: "CASTIGO INSTANTÁNEO", title: "¡Asignación Doble!", text: "El jugador que sacó la carta asigna 3 tragos a 2 personas distintas.", drink: "Asigna 3 Tragos a 2 personas" }, { id: 138, cat: "CASTIGO INSTANTÁNEO", title: "El Gato/Perro", text: "Todos los que tengan un gato o un perro (o ambos) beben 1 trago.", drink: "Bebe 1 Trago" }, { id: 139, cat: "CASTIGO INSTANTÁNEO", title: "Los Solteros", text: "Todos los solteros o los que no tengan pareja actualmente beben 3 tragos.", drink: "Bebe 3 Tragos" }, { id: 140, cat: "CASTIGO INSTANTÁNEO", title: "Los Calcetines de Colores", text: "Todos los que no lleven calcetines blancos o negros deben beber 2 tragos.", drink: "Bebe 2 Tragos" }, { id: 141, cat: "CASTIGO INSTANTÁNEO", title: "Los Gafas", text: "Todos los que lleven gafas de sol o de ver deben beber 2 tragos.", drink: "Bebe 2 Tragos" }, { id: 142, cat: "CASTIGO INSTANTÁNEO", title: "El Más Alto", text: "El jugador más alto de la mesa bebe 3 tragos.", drink: "El jugador más alto bebe 3 Tragos" }, { id: 143, cat: "CASTIGO INSTANTÁNEO", title: "El Bebedor de la Derecha", text: "El jugador a tu derecha debe beber el doble de tu castigo (máx. 3).", drink: "Jugador de la derecha bebe 3 Tragos" }, { id: 144, cat: "CASTIGO INSTANTÁNEO", title: "El Que Tose", text: "El último jugador que haya tosido o estornudado bebe 3 tragos.", drink: "Bebe 3 Tragos" }, { id: 145, cat: "CASTIGO INSTANTÁNEO", title: "Las Uñas Pintadas", text: "Todos los que tengan las uñas pintadas (manos o pies) deben beber 1 trago.", drink: "Bebe 1 Trago" }, { id: 146, cat: "CASTIGO INSTANTÁNEO", title: "El Desconocido", text: "El jugador que sacó la carta bebe 1 trago. Luego, le asigna 2 tragos a alguien que no conoce bien.", drink: "Jugador bebe 1, Asigna 2" }, { id: 147, cat: "CASTIGO INSTANTÁNEO", title: "El Castigo al Lado", text: "El jugador que sacó la carta bebe 1 trago, y el de su derecha bebe 2.", drink: "Jugador bebe 1, derecha bebe 2" }, { id: 148, cat: "CASTIGO INSTANTÁNEO", title: "El Fanático", text: "Todos los que tengan una mascota o sean dueños de un vehículo (coche o moto) beben 2 tragos.", drink: "Bebe 2 Tragos" }, { id: 149, cat: "CASTIGO INSTANTÁNEO", title: "La Traición", text: "Di una razón por la que el jugador que tienes enfrente ha traicionado alguna amistad tuya.", drink: "Ambos beben 3 tragos" }, { id: 150, cat: "CASTIGO INSTANTÁNEO", title: "El Último en Tocar el Suelo", text: "Pongan un pie sobre la silla. El último en volver a tocar el suelo con los dos pies, bebe 3 tragos.", drink: "Bebe 3 Tragos" }, { id: 151, cat: "MISIÓN SECRETA", title: "El Cambio de Nombre", text: 'Haz que 2 jugadores te llamen por un apodo inventado por ti (ej. "Capitán") antes de 3 turnos.', drink: "Si te descubren, bebes 3 Tragos" }, { id: 152, cat: "MISIÓN SECRETA", title: "El Toque Frío", text: "Toca discretamente el cuello de otro jugador con algo muy frío.", drink: "Si te descubren, bebes 2 Tragos" }, { id: 153, cat: "MISIÓN SECRETA", title: "La Aprobación", text: "Logra que el jugador a tu izquierda asienta con la cabeza 3 veces sin hacerle una pregunta directa.", drink: "Si te descubren, bebes 3 Tragos" }, { id: 154, cat: "MISIÓN SECRETA", title: "El Teléfono Falso", text: "Finge recibir una llamada de alguien famoso y mantén una conversación creíble durante 30 segundos.", drink: "Si alguien te pregunte si es real, bebes 3 Tragos" }, { id: 155, cat: "MISIÓN SECRETA", title: "Objeto Escondido", text: "Esconde un objeto pequeño del área de juego sin que nadie lo note.", drink: "Si te descubren, bebes 2 Tragos" }, { id: 156, cat: "MISIÓN SECRETA", title: "El Piropo", text: "Haz un cumplido muy específico sobre la ropa o aspecto físico del jugador de enfrente sin que suene sarcástico.", drink: "Si te descubren, bebes 3 Tragos" }, { id: 157, cat: "MISIÓN SECRETA", title: "Cambio de Asiento", text: "Termina la ronda sentado en un asiento diferente al que empezaste.", drink: "Si te descubren, bebes 1 Trago" }, { id: 158, cat: "MISIÓN SECRETA", title: "El Poema Oculto", text: "Usa al menos 5 palabras que rimen entre sí en una sola frase sin que te lo cuestionen.", drink: "Si te descubren, bebes 3 Tragos" }, { id: 159, cat: "MISIÓN SECRETA", title: "El Fiel Amigo", text: "Consigue que otro jugador te dé su bebida para que la sostengas durante el resto de la ronda.", drink: "Si te descubren, bebes 2 Tragos" }, { id: 160, cat: "MISIÓN SECRETA", title: "El Brindis", text: 'Propón un brindis "por la amistad" antes de que tu turno vuelva a empezar.', drink: "Si no lo logras, bebes 2 Tragos" }, { id: 161, cat: "MISIÓN SECRETA", title: "El Camarero", text: 'Pídele a 3 personas si quieren "más de su bebida" sin que sospechen que es un reto.', drink: "Si te descubren, bebes 3 Tragos" }, { id: 162, cat: "MISIÓN SECRETA", title: "El Anfitrión", text: "Coloca un cojín o almohada bajo el trasero de un jugador sin que se dé cuenta.", drink: "Si te descubren, bebes 3 Tragos" }, { id: 163, cat: "MISIÓN SECRETA", title: "La Postura Extraña", text: "Mantén una postura corporal incómoda (ej. la mano sobre la cabeza) durante toda la conversación.", drink: "Si te descubren, bebes 2 Tragos" }, { id: 164, cat: "MISIÓN SECRETA", title: "El Famoso", text: "Di una frase célebre de un personaje de ficción o real como si fuera tuya.", drink: "Si alguien pregunta por el origen, bebes 3 Tragos" }, { id: 165, cat: "MISIÓN SECRETA", title: "La Conversación Falsa", text: "Inventa una excusa para que un jugador cambie de asiento.", drink: "Si te descubren, bebes 1 Trago" }, { id: 166, cat: "MISIÓN SECRETA", title: "El Error de Palabra", text: 'Usa una palabra incorrecta (ej. "ordenador" en vez de "móvil") al menos 5 veces.', drink: "Si te descubren, bebes 2 Tragos" }, { id: 167, cat: "MISIÓN SECRETA", title: "El Zapato Mojado", text: "Moja discretamente la punta del zapato de un jugador con tu bebida.", drink: "Si te descubren, bebes 3 Tragos" }, { id: 168, cat: "MISIÓN SECRETA", title: "El Poema", text: "Recita un poema de 4 líneas inventado sobre el jugador a tu derecha.", drink: "Si no es un poema original, bebes 3 Tragos" }, { id: 169, cat: "MISIÓN SECRETA", title: "La Cita a Ciegas", text: "Elige a un jugador y un lugar. Intenta convencer al grupo de que irán juntos a una cita ahí.", drink: "Si te descubren, bebes 2 Tragos" }, { id: 170, cat: "MISIÓN SECRETA", title: "El Grito Oculto", text: 'Durante 5 minutos, debes emitir un pequeño grito (casi inaudible) cada vez que alguien use la palabra "pero".', drink: "Si te descubren, bebes 3 Tragos" }, { id: 171, cat: "MISIÓN SECRETA", title: "El Doble Sentido", text: "Usa una palabra con doble sentido (grosero o pícaro) 5 veces sin que nadie se dé cuenta.", drink: "Si te descubren, bebes 3 Tragos" }, { id: 172, cat: "MISIÓN SECRETA", title: "El Hipster", text: 'Usa al menos 3 palabras "cool" o en inglés (ej. vibe, aesthetic, mood) sin que te lo cuestionen.', drink: "Si te descubren, bebes 2 Tragos" }, { id: 173, cat: "MISIÓN SECRETA", title: "El Espía", text: "Intercambia discretamente de lugar dos objetos pequeños de la mesa.", drink: "Si te descubren, bebes 3 Tragos" }, { id: 174, cat: "MISIÓN SECRETA", title: "El Estornudo Falso", text: "Finge un estornudo muy ruidoso 3 veces sin que nadie te pregunte si estás bien.", drink: "Si te preguntan, bebes 2 Tragos" }, { id: 175, cat: "MISIÓN SECRETA", title: "El Tocado", text: "Toca la cabeza de 3 jugadores diferentes sin llamar la atención.", drink: "Si te descubren, bebes 3 Tragos" }, { id: 176, cat: "MISIÓN SECRETA", title: "El Deletreador", text: 'Deletrea una palabra larga (ej. "paralelepípedo") sin motivo aparente en la conversación.', drink: "Si te lo cuestionan, bebes 2 Tragos" }, { id: 177, cat: "MISIÓN SECRETA", title: "El Filósofo", text: "Di un refrán o frase de sabiduría popular en medio de una conversación inapropiada.", drink: "Si no lo logras, bebes 3 Tragos" }, { id: 178, cat: "MISIÓN SECRETA", title: "El Doblaje", text: "Repite la última frase que dijo la persona a tu derecha con un tono dramático.", drink: "Si te lo cuestionan, bebes 1 Trago" }, { id: 179, cat: "MISIÓN SECRETA", title: "La Confusión", text: "Confunde intencionalmente el nombre de una persona con el de otra.", drink: "Si te lo corrigen, bebes 3 Tragos" }, { id: 180, cat: "MISIÓN SECRETA", title: "El Desinterés", text: "Durante una conversación, mira fijamente a un punto en la pared por 30 segundos.", drink: "Si te lo cuestionan, bebes 2 Tragos" }, { id: 181, cat: "COMODÍN", title: "El Protector", text: 'GUARDA ESTA CARTA. Puedes anular cualquier castigo de "3 Tragos" que se te asigne.', drink: "N/A (Se guarda)" }, { id: 182, cat: "COMODÍN", title: "Intercambio de Suerte", text: "GUARDA ESTA CARTA. Cuando un jugador reciba un castigo de 3 tragos, puedes activarla para intercambiar roles y castigos.", drink: "N/A (Se guarda)" }, { id: 183, cat: "COMODÍN", title: "Inmunidad de Regla", text: 'GUARDA ESTA CARTA. Te da inmunidad ante cualquier "Regla de Oro" activa hasta que salga la siguiente carta.', drink: "N/A (Se guarda)" }, { id: 184, cat: "COMODÍN", title: "Dedo en la Cabeza", text: 'GUARDA ESTA CARTA. En cualquier momento, puedes decir "Dedo en la Cabeza". El último en poner el dedo en su cabeza bebe 3 tragos.', drink: "N/A (Se guarda)" }, { id: 185, cat: "COMODÍN", title: "Asignación Doble", text: "GUARDA ESTA CARTA. Puedes usarla para que la persona que te castiga duplique su propio castigo.", drink: "N/A (Se guarda)" }, { id: 186, cat: "COMODÍN", title: "La Ley de Murphy", text: "GUARDA ESTA CARTA. El jugador a tu izquierda recibe inmediatamente el castigo de la carta que acaba de sacar y tú sacas una nueva.", drink: "N/A (Se guarda)" }, { id: 187, cat: "COMODÍN", title: "El Silencio de la Tumba", text: "GUARDA ESTA CARTA. Puedes usarla para silenciar a un jugador por 2 turnos. Si habla, bebe 2 tragos.", drink: "N/A (Se guarda)" }, { id: 188, cat: "COMODÍN", title: "Reversa de Tragos", text: "GUARDA ESTA CARTA. Si te asignan un castigo, puedes devolverle la mitad de los tragos al jugador que te los asignó.", drink: "N/A (Se guarda)" }, { id: 189, cat: "COMODÍN", title: "Límite Temporal", text: 'GUARDA ESTA CARTA. Puedes establecer un límite de 5 segundos para que otro jugador responda su "Verdad Incómoda" o beba.', drink: "N/A (Se guarda)" }, { id: 190, cat: "COMODÍN", title: "Robo de Comodín", text: 'GUARDA ESTA CARTA. Puedes robar una carta "Comodín" al azar de cualquier otro jugador que tenga una.', drink: "N/A (Se guarda)" }, { id: 191, cat: "COMODÍN", title: "El Veto", text: 'GUARDA ESTA CARTA. Puedes vetar la próxima carta "Regla de Oro" que salga.', drink: "N/A (Se guarda)" }, { id: 192, cat: "COMODÍN", title: "El Rescatador", text: "GUARDA ESTA CARTA. Puedes usarla para salvar a otro jugador de un castigo de 1 o 2 tragos.", drink: "N/A (Se guarda)" }, { id: 193, cat: "COMODÍN", title: "Trago Grupal", text: "GUARDA ESTA CARTA. Puedes activar esta carta para que todos los jugadores beban 1 trago.", drink: "N/A (Se guarda)" }, { id: 194, cat: "COMODÍN", title: "El Soplón", text: 'GUARDA ESTA CARTA. Puedes obligar a cualquier jugador a responder una "Verdad Incómoda" inventada por ti o beber 3.', drink: "N/A (Se guarda)" }, { id: 195, cat: "COMODÍN", title: "Inmunidad de Trivia", text: 'GUARDA ESTA CARTA. Te da un pase libre en la próxima carta de "Trivia Rápida" que saques.', drink: "N/A (Se guarda)" }, { id: 196, cat: "COMODÍN", title: "El Padrino", text: 'GUARDA ESTA CARTA. Asigna un jugador para que sea tu "Padrino". Cualquier castigo tuyo es reducido a la mitad si él bebe 1 trago.', drink: "N/A (Se guarda)" }, { id: 197, cat: "COMODÍN", title: "Robo de Gesto", text: 'GUARDA ESTA CARTA. Puedes robar el "Gesto" activo de la "Regla de Oro" y asignarlo a otro jugador.', drink: "N/A (Se guarda)" }, { id: 198, cat: "COMODÍN", title: "El Cambio de Categoría", text: "GUARDA ESTA CARTA. Si no te gusta la carta que sacaste, puedes tirarla y sacar una nueva de una categoría diferente.", drink: "N/A (Se guarda)" }, { id: 199, cat: "COMODÍN", title: "El Turno Extra", text: "GUARDA ESTA CARTA. Te permite sacar una segunda carta inmediatamente después de la tuya.", drink: "N/A (Se guarda)" }, { id: 200, cat: "COMODÍN", title: "El Doble o Nada", text: "GUARDA ESTA CARTA. Si te asignan 1 o 2 tragos, puedes doblarlos (máx. 3) para obtener 1 carta Comodín extra.", drink: "N/A (Se guarda)" }, { id: 201, cat: "COMODÍN", title: "¡A Prueba de Fallas!", text: "GUARDA ESTA CARTA. Cuando saques una carta de reto o trivia, puedes transferirla a la persona a tu derecha.", drink: "N/A (Se guarda)" }, { id: 202, cat: "COMODÍN", title: "El Repartidor", text: "GUARDA ESTA CARTA. Puedes asignar el castigo de la próxima carta a 2 jugadores distintos a tu elección.", drink: "N/A (Se guarda)" }, { id: 203, cat: "COMODÍN", title: "El Desvío", text: "GUARDA ESTA CARTA. Puedes desviar cualquier castigo de 1-2 tragos que se te asigne a un jugador de tu elección.", drink: "N/A (Se guarda)" }, { id: 204, cat: "COMODÍN", title: "La Reacción", text: 'GUARDA ESTA CARTA. Si te dan un "Reto Express" que te niegas a hacer, puedes asignarle 3 tragos al jugador que te lo puso.', drink: "N/A (Se guarda)" }, { id: 205, cat: "COMODÍN", title: "El Escondite", text: "GUARDA ESTA CARTA. En cualquier momento, puedes esconderte durante 1 minuto sin que nadie te moleste ni te asigne castigos.", drink: "N/A (Se guarda)" }, { id: 206, cat: "COMODÍN", title: "El Castigo de Consuelo", text: "GUARDA ESTA CARTA. Puedes usarla para recibir 1 trago en lugar de cualquier castigo de 3 tragos.", drink: "N/A (Se guarda)" }, { id: 207, cat: "COMODÍN", title: "El Protector de Regla", text: 'GUARDA ESTA CARTA. Puedes evitar que otro jugador rompa la "Regla de Oro" activa normalmente por 3 turnos.', drink: "N/A (Se guarda)" }, { id: 208, cat: "COMODÍN", title: "El Descarte", text: "GUARDA ESTA CARTA. Te permite descartar dos cartas del mazo sin que se jueguen.", drink: "N/A (Se guarda)" }, { id: 209, cat: "COMODÍN", title: "El Rey Midas", text: "GUARDA ESTA CARTA. Si ganas un Duelo 1 vs 1, puedes obligar a la persona que sacó esta carta a beber 3 tragos.", drink: "N/A (Se guarda)" }, { id: 210, cat: "COMODÍN", title: "La Ceguera Temporal", text: 'GUARDA ESTA CARTA. Obliga al jugador a tu izquierda a cerrar los ojos mientras respondes tu próxima "Verdad Incómoda".', drink: "N/A (Se guarda)" }, { id: 211, cat: "TRIVIA RÁPIDA", title: "Capital del Mundo", text: "Nombra la capital de Australia. (Respuesta: Canberra)", drink: "Bebe 2 Tragos si fallas" }, { id: 212, cat: "TRIVIA RÁPIDA", title: "Moneda Local", text: "¿Cuál es la moneda oficial de Japón? (Respuesta: Yen)", drink: "Bebe 1 Trago si fallas" }, { id: 213, cat: "TRIVIA RÁPIDA", title: "¿De Dónde Viene?", text: '¿De qué país es originario el plato "Sushi"? (Respuesta: Japón)', drink: "Bebe 1 Trago si fallas" }, { id: 214, cat: "TRIVIA RÁPIDA", title: "La Montaña Más Alta", text: "Nombra la montaña más alta del mundo. (Respuesta: Monte Everest)", drink: "Bebe 3 Tragos si fallas" }, { id: 215, cat: "TRIVIA RÁPIDA", title: "El Símbolo Químico", text: "¿Cuál es el símbolo químico del Oro? (Respuesta: Au)", drink: "Bebe 1 Trago si fallas" }, { id: 216, cat: "TRIVIA RÁPIDA", title: "El Idioma Más Hablado", text: "¿Cuál es el idioma más hablado del mundo por número de hablantes nativos? (Respuesta: Mandarín/Chino)", drink: "Bebe 2 Tragos si fallas" }, { id: 217, cat: "TRIVIA RÁPIDA", title: "Cita Célebre", text: '¿Quién dijo la famosa frase: "Solo sé que no sé nada"? (Respuesta: Sócrates)', drink: "Bebe 2 Tragos si fallas" }, { id: 218, cat: "TRIVIA RÁPIDA", title: "El Planeta Rojo", text: "¿Cuál es el planeta más cercano al Sol? (Respuesta: Mercurio)", drink: "Bebe 1 Trago si fallas" }, { id: 219, cat: "TRIVIA RÁPIDA", title: "El Océano", text: "Nombra el océano más grande del mundo. (Respuesta: Pacífico)", drink: "Bebe 1 Trago si fallas" }, { id: 220, cat: "TRIVIA RÁPIDA", title: "Saga de Película", text: "¿Cuántas películas conforman la saga original de Star Wars (Episodios IV, V, VI)? (Respuesta: 3)", drink: "Bebe 2 Tragos si fallas" }, { id: 221, cat: "TRIVIA RÁPIDA", title: "Deporte Olímpico", text: "¿Cuántos aros tiene el símbolo olímpico? (Respuesta: 5)", drink: "Bebe 1 Trago si fallas" }, { id: 222, cat: "TRIVIA RÁPIDA", title: "El Número Pi", text: "Di los primeros 4 decimales del número Pi. (Respuesta: 3.1415)", drink: "Bebe 2 Tragos si fallas" }, { id: 223, cat: "TRIVIA RÁPIDA", title: "Invento Clave", text: "¿Quién inventó la bombilla eléctrica? (Respuesta: Thomas Edison)", drink: "Bebe 3 Tragos si fallas" }, { id: 224, cat: "TRIVIA RÁPIDA", title: "La Obra de Arte", text: "¿Dónde se encuentra la Capilla Sixtina? (Respuesta: Ciudad del Vaticano)", drink: "Bebe 2 Tragos si fallas" }, { id: 225, cat: "TRIVIA RÁPIDA", title: "El Rey del Pop", text: 'Nombra dos canciones de Michael Jackson que no sean "Thriller" o "Billie Jean".', drink: "Bebe 3 Tragos si fallas" }, { id: 226, cat: "TRIVIA RÁPIDA", title: "El Desierto", text: "¿Cuál es el desierto más grande del mundo (caliente)? (Respuesta: Sahara)", drink: "Bebe 1 Trago si fallas" }, { id: 227, cat: "TRIVIA RÁPIDA", title: "El Animal Veloz", text: "Nombra al animal terrestre más rápido del mundo. (Respuesta: Guepardo)", drink: "Bebe 2 Tragos si fallas" }, { id: 228, cat: "TRIVIA RÁPIDA", title: "La Ciudad de los Rascacielos", text: '¿Qué ciudad es conocida como "La Gran Manzana"? (Respuesta: Nueva York)', drink: "Bebe 1 Trago si fallas" }, { id: 229, cat: "TRIVIA RÁPIDA", title: "Literatura Clásica", text: '¿Quién escribió "Don Quijote de la Mancha"? (Respuesta: Miguel de Cervantes)', drink: "Bebe 3 Tragos si fallas" }, { id: 230, cat: "TRIVIA RÁPIDA", title: "Matemáticas Simples", text: "Si un reloj marca las 3:30, ¿cuál es el ángulo entre el minutero y el horario? (Respuesta: 75°)", drink: "Bebe 3 Tragos si fallas" }, { id: 231, cat: "TRIVIA RÁPIDA", title: "Cuerpo Humano", text: "¿Cuál es el hueso más largo del cuerpo humano? (Respuesta: Fémur)", drink: "Bebe 2 Tragos si fallas" }, { id: 232, cat: "TRIVIA RÁPIDA", title: "De Película", text: "¿Cómo se llama el muñeco de madera que quería ser un niño de verdad? (Respuesta: Pinocho)", drink: "Bebe 1 Trago si fallas" }, { id: 233, cat: "TRIVIA RÁPIDA", title: "Geografía", text: "Nombra un país que colinde con México.", drink: "Bebe 1 Trago si fallas" }, { id: 234, cat: "TRIVIA RÁPIDA", title: "La Velocidad de la Luz", text: "¿Cuál es la velocidad aproximada de la luz en el vacío (en km/s)? (Respuesta: 300.000 km/s)", drink: "Bebe 3 Tragos si fallas" }, { id: 235, cat: "TRIVIA RÁPIDA", title: "El Dicho", text: 'Completa el dicho: "En casa del herrero..." (Respuesta: cuchillo de palo)', drink: "Bebe 1 Trago si fallas" }, { id: 236, cat: "TRIVIA RÁPIDA", title: "Historia", text: "¿En qué año cayó el Muro de Berlín? (Respuesta: 1989)", drink: "Bebe 3 Tragos si fallas" }, { id: 237, cat: "TRIVIA RÁPIDA", title: "Ciencia", text: '¿Qué significa "H2O"?', drink: "Bebe 1 Trago si fallas" }, { id: 238, cat: "TRIVIA RÁPIDA", title: "El Juego", text: "Nombra 3 colores primarios.", drink: "Bebe 1 Trago si fallas" }, { id: 239, cat: "TRIVIA RÁPIDA", title: "Mitos y Leyendas", text: "Nombra al dios griego del mar. (Respuesta: Poseidón)", drink: "Bebe 2 Tragos si fallas" }, { id: 240, cat: "TRIVIA RÁPIDA", title: "El Color del Arcoíris", text: "¿Cuál es el tercer color del arcoíris, contando desde el exterior? (Respuesta: Amarillo)", drink: "Bebe 2 Tragos si fallas" }, { id: 241, cat: "TRIVIA RÁPIDA", title: "El Continente", text: "Nombra el continente más poblado. (Respuesta: Asia)", drink: "Bebe 1 Trago si fallas" }, { id: 242, cat: "TRIVIA RÁPIDA", title: "El Sistema Solar", text: "¿Cuántos planetas hay en el sistema solar (incluyendo Plutón si quieres beber)? (Respuesta: 8)", drink: "Bebe 2 Tragos si fallas" }, { id: 243, cat: "TRIVIA RÁPIDA", title: "La Invención del Dinero", text: "¿Qué país fue el primero en utilizar papel moneda? (Respuesta: China)", drink: "Bebe 3 Tragos si fallas" }, { id: 244, cat: "TRIVIA RÁPIDA", title: "El Símbolo", text: "¿Qué animal es el símbolo de la paz? (Respuesta: Paloma)", drink: "Bebe 1 Trago si fallas" }, { id: 245, cat: "TRIVIA RÁPIDA", title: "El Sentido", text: "Nombra 4 de los 5 sentidos del cuerpo humano.", drink: "Bebe 1 Trago si fallas" }, { id: 246, cat: "TRIVIA RÁPIDA", title: "Tecnología", text: "¿Cuál es el nombre de la compañía que creó el iPhone? (Respuesta: Apple)", drink: "Bebe 1 Trago si fallas" }, { id: 247, cat: "TRIVIA RÁPIDA", title: "El Peso", text: "¿Qué pesa más, un kilo de hierro o un kilo de paja? (Respuesta: Pesan lo mismo)", drink: "Bebe 3 Tragos si fallas" }, { id: 248, cat: "TRIVIA RÁPIDA", title: "Música Clásica", text: '¿Quién compuso la famosa "Quinta Sinfonía"? (Respuesta: Ludwig van Beethoven)', drink: "Bebe 3 Tragos si fallas" }, { id: 249, cat: "TRIVIA RÁPIDA", title: "De Película", text: "¿Cuál es el nombre del protagonista de la saga de Harry Potter? (Respuesta: Harry Potter)", drink: "Bebe 1 Trago si fallas" }, { id: 250, cat: "TRIVIA RÁPIDA", title: "Personaje de Cómic", text: "¿Cuál es el nombre real de Batman? (Respuesta: Bruce Wayne)", drink: "Bebe 2 Tragos si fallas" }, { id: 251, cat: "TRIVIA RÁPIDA", title: "Geografía", text: "¿Qué río pasa por El Cairo? (Respuesta: Nilo)", drink: "Bebe 3 Tragos si fallas" }, { id: 252, cat: "TRIVIA RÁPIDA", title: "Los Elementos", text: "¿Cuántos elementos químicos hay en la tabla periódica? (Respuesta: 118)", drink: "Bebe 3 Tragos si fallas" }, { id: 253, cat: "TRIVIA RÁPIDA", title: "De Película", text: '¿Quién es el director de la película "Titanic"? (Respuesta: James Cameron)', drink: "Bebe 2 Tragos si fallas" }, { id: 254, cat: "TRIVIA RÁPIDA", title: "El Invento", text: "¿Qué inventó Alexander Graham Bell? (Respuesta: Teléfono)", drink: "Bebe 1 Trago si fallas" }, { id: 255, cat: "TRIVIA RÁPIDA", title: "El Número Primo", text: "Nombra el número primo más pequeño de dos dígitos. (Respuesta: 11)", drink: "Bebe 3 Tragos si fallas" }, { id: 256, cat: "TRIVIA RÁPIDA", title: "Animales", text: "¿Cuál es el mamífero más grande del mundo? (Respuesta: Ballena Azul)", drink: "Bebe 2 Tragos si fallas" }, { id: 257, cat: "TRIVIA RÁPIDA", title: "Música", text: "Nombra el género musical asociado a Bob Marley. (Respuesta: Reggae)", drink: "Bebe 1 Trago si fallas" }, { id: 258, cat: "TRIVIA RÁPIDA", title: "La Historia", text: "¿Quién fue el primer presidente de Estados Unidos? (Respuesta: George Washington)", drink: "Bebe 3 Tragos si fallas" }, { id: 259, cat: "TRIVIA RÁPIDA", title: "Cocina", text: "¿De qué país es la pizza? (Respuesta: Italia)", drink: "Bebe 1 Trago si fallas" }, { id: 260, cat: "TRIVIA RÁPIDA", title: "El Idioma", text: "¿Qué idioma se habla en Brasil? (Respuesta: Portugués)", drink: "Bebe 1 Trago si fallas" }, { id: 261, cat: "TRIVIA RÁPIDA", title: "Cine", text: "¿Cómo se llama el perro de Tintín? (Respuesta: Milú)", drink: "Bebe 2 Tragos si fallas" }, { id: 262, cat: "TRIVIA RÁPIDA", title: "El Monumento", text: "¿Dónde se encuentra el Coliseo Romano? (Respuesta: Roma, Italia)", drink: "Bebe 1 Trago si fallas" }, { id: 263, cat: "TRIVIA RÁPIDA", title: "El Inventor", text: "¿Quién formuló la Teoría de la Relatividad? (Respuesta: Albert Einstein)", drink: "Bebe 3 Tragos si fallas" }, { id: 264, cat: "TRIVIA RÁPIDA", title: "Deporte", text: "¿Qué deporte se juega en Wimbledon? (Respuesta: Tenis)", drink: "Bebe 1 Trago si fallas" }, { id: 265, cat: "TRIVIA RÁPIDA", title: "El Continente", text: "Nombra el único continente que es también un país. (Respuesta: Australia/Oceanía)", drink: "Bebe 2 Tragos si fallas" }, { id: 266, cat: "TRIVIA RÁPIDA", title: "El Periodo", text: "¿Qué periodo vino antes del Período Jurásico? (Respuesta: Triásico)", drink: "Bebe 3 Tragos si fallas" }, { id: 267, cat: "TRIVIA RÁPIDA", title: "El Elemento", text: "¿Qué metal es líquido a temperatura ambiente? (Respuesta: Mercurio)", drink: "Bebe 2 Tragos si fallas" }, { id: 268, cat: "TRIVIA RÁPIDA", title: "La Estatua", text: "¿En qué ciudad se encuentra la Estatua de la Libertad? (Respuesta: Nueva York)", drink: "Bebe 1 Trago si fallas" }, { id: 269, cat: "TRIVIA RÁPIDA", title: "El Escritor", text: '¿Quién escribió la novela "Cien años de soledad"? (Respuesta: Gabriel García Márquez)', drink: "Bebe 3 Tragos si fallas" }, { id: 270, cat: "TRIVIA RÁPIDA", title: "El Músico", text: "Nombra el instrumento que tocaba Mozart. (Respuesta: Piano/Clavecín)", drink: "Bebe 2 Tragos si fallas" }, { id: 271, cat: "CADENA", title: "La Categoría", text: "El jugador que saca la carta dice una categoría (ej. Frutas). El siguiente nombra un elemento de esa categoría.", drink: "El primero en repetir o tardar más de 5 segundos, bebe 2 Tragos" }, { id: 272, cat: "CADENA", title: "Asociación Musical", text: "El jugador que saca la carta nombra un artista. El siguiente debe nombrar un artista que empiece con la última letra del artista anterior.", drink: "El primero en tardar más de 5 segundos o repetir, bebe 2 Tragos" }, { id: 273, cat: "CADENA", title: "La Historia Colectiva", text: "Jugador 1 dice 4 palabras para empezar una historia. Cada jugador añade 4 palabras.", drink: "El primero en repetir o crear una frase incoherente, bebe 3 Tragos" }, { id: 274, cat: "CADENA", title: "¡Al Revés!", text: "El jugador dice una palabra (de 5+ letras). El siguiente debe deletrearla al revés.", drink: "El primero en equivocarse bebe 2 Tragos" }, { id: 275, cat: "CADENA", title: "El Nombre y el Apodo", text: "Jugador 1 dice su nombre y un apodo. El siguiente repite los nombres y apodos anteriores y añade el suyo.", drink: "El primero en fallar la secuencia bebe 3 Tragos" }, { id: 276, cat: "CADENA", title: "Tres de Todo", text: "Nombra 3 marcas de coche. El siguiente nombra 3 animales. Continúa con 3 películas, 3 ciudades, 3 bebidas...", drink: "El primero en no poder nombrar 3 de la categoría, bebe 2 Tragos" }, { id: 277, cat: "CADENA", title: "El Detective", text: "El jugador piensa en una persona (famosa o del grupo). Los demás hacen preguntas de sí/no. El jugador que adivina elige a quién bebe.", drink: "Si el jugador se rinde o falla una respuesta, bebe 3 Tragos" }, { id: 278, cat: "CADENA", title: "El Color Múltiple", text: "El jugador dice un color y un objeto de ese color. El siguiente repite y añade su color/objeto.", drink: "El primero en fallar la secuencia bebe 3 Tragos" }, { id: 279, cat: "CADENA", title: "Nombres de Bebidas", text: "Jugador 1 nombra una bebida. El siguiente repite y añade una nueva.", drink: "El primero en fallar la secuencia bebe 2 Tragos" }, { id: 280, cat: "CADENA", title: "Canciones con Nombre", text: 'Nombra una canción que tenga un nombre de persona en el título (ej. "Billie Jean").', drink: "El primero en repetir o fallar, bebe 3 Tragos" }, { id: 281, cat: "CADENA", title: "De la A a la Z", text: "Nombra una palabra que empiece con la A. El siguiente con la B. Continúa en orden alfabético.", drink: "El primero en fallar la letra, bebe 2 Tragos" }, { id: 282, cat: "CADENA", title: "La Frase Colectiva", text: "Jugador 1 dice una palabra. Jugador 2 añade una palabra para formar una frase coherente.", drink: "El que rompa la coherencia de la frase bebe 2 Tragos" }, { id: 283, cat: "CADENA", title: "El Superhéroe", text: "Jugador 1 nombra un superhéroe. El siguiente nombra un superhéroe cuya primera letra sea la última del anterior.", drink: "El primero en tardar más de 5 segundos, bebe 3 Tragos" }, { id: 284, cat: "CADENA", title: "Nombres de Actores", text: "Jugador 1 nombra un actor. El siguiente nombra una película que haya hecho el actor anterior.", drink: "El primero en fallar la película/actor, bebe 2 Tragos" }, { id: 285, cat: "CADENA", title: "¿Quién Soy Yo?", text: 'El jugador piensa en un objeto de la sala. Los demás preguntan con "Sí" o "No" para adivinar.', drink: "Si adivinan, el jugador bebe 2 Tragos" }, { id: 286, cat: "CADENA", title: "Animales de Dos Patas", text: "Jugador 1 nombra un animal de dos patas. El siguiente nombra uno de cuatro, luego de seis, y vuelve a empezar.", drink: "El que no pueda nombrar uno de la categoría, bebe 3 Tragos" }, { id: 287, cat: "CADENA", title: "El Throwback", text: "Jugador 1 nombra algo de los años 90. El siguiente nombra algo de los 2000. Continúa con los 2010.", drink: "El que falle la secuencia temporal, bebe 2 Tragos" }, { id: 288, cat: "CADENA", title: "Nombres de Marcas", text: "Jugador 1 nombra una marca de zapatos. El siguiente nombra una marca de coche, y luego de comida.", drink: "El que no pueda nombrar una marca, bebe 2 Tragos" }, { id: 289, cat: "CADENA", title: "Nombres y Apellidos", text: "Jugador 1 dice un nombre y un apellido. El siguiente dice un nombre cuyo apellido empiece con la última letra del anterior.", drink: "El primero en fallar, bebe 3 Tragos" }, { id: 290, cat: "CADENA", title: "Países con I", text: "Nombra un país que contenga la letra 'I'. El siguiente, repite y añade otro.", drink: "El que falle la secuencia, bebe 2 Tragos" }, { id: 291, cat: "CADENA", title: "El Viaje en Avión", text: '"Voy en un avión y llevo..." El jugador 1 lleva algo. El 2 repite y añade algo que empiece con la misma letra.', drink: "El que falle la secuencia o la letra, bebe 3 Tragos" }, { id: 292, cat: "CADENA", title: "¡Palabra Prohibida!", text: 'Piensen en una palabra que nadie puede decir (ej. el nombre de un jugador, "botella").', drink: "El que diga la palabra prohibida, bebe 3 Tragos" }, { id: 293, cat: "CADENA", title: "El Recuento", text: "Jugador 1 dice el número de dedos de su mano. Jugador 2 repite el número y añade una parte del cuerpo más (ej. 2 orejas).", drink: "El primero en equivocarse o repetir, bebe 3 Tragos" }, { id: 294, cat: "CADENA", title: "El Viaje al Mercado", text: '"Voy al mercado y compro..." El jugador 1 compra algo. El 2 repite y añade.', drink: "El que falle la secuencia de objetos, bebe 2 Tragos" }, { id: 295, cat: "CADENA", title: "Personajes Ficticios", text: "Nombra un personaje de la serie/película que haya dicho el jugador anterior.", drink: "El primero en no poder nombrar uno, bebe 3 Tragos" }, { id: 296, cat: "CADENA", title: "La Cadena de Colores", text: "Jugador 1 dice un color. El siguiente dice el nombre de alguien que lleve ese color (del grupo o famoso).", drink: "El primero en no poder nombrar a alguien, bebe 2 Tragos" }, { id: 297, cat: "CADENA", title: "Los 7 Pecados", text: "Nombra los 7 pecados capitales de forma secuencial.", drink: "El primero en fallar la lista, bebe 3 Tragos" }, { id: 298, cat: "CADENA", title: "La Sopa de Letras", text: "Elige una palabra (ej. RISA). Cada jugador dice una palabra que contenga las letras R, I, S o A.", drink: "El que no pueda decir una palabra válida, bebe 2 Tragos" }, { id: 299, cat: "CADENA", title: 'Personajes con "O"', text: "Nombra un personaje ficticio o real que contenga la letra 'O' en su nombre.", drink: "El primero en repetir o fallar, bebe 2 Tragos" }, { id: 300, cat: "CADENA", title: "El Último Objeto", text: "El jugador que sacó la carta nombra un objeto. El último en tocar un objeto similar bebe 3 tragos.", drink: "El último en tocar el objeto, bebe 3 Tragos" }];
+        const POKER_CARDS = [{ id: "As♥️", suit: "♥️", rank: "As", category: "Corazones", title: "Elige a alguien para cumplir un reto juntos", text: "Elige a alguien para cumplir un reto juntos.", drink: "3 Tragos" }, { id: "2♥️", suit: "♥️", rank: "2", category: "Corazones", title: "Di una virtud de cada jugador", text: "Di una virtud de cada jugador.", drink: "1 Trago" }, { id: "3♥️", suit: "♥️", rank: "3", category: "Corazones", title: "Cuenta una anécdota vergonzosa", text: "Cuenta una anécdota vergonzosa.", drink: "1 Trago" }, { id: "4♥️", suit: "♥️", rank: "4", category: "Corazones", title: "Dale un abrazo de 10 segundos", text: "Dale un abrazo de 10 segundos al que tengas enfrente.", drink: "1 Trago" }, { id: "5♥️", suit: "♥️", rank: "5", category: "Corazones", title: "Publica emoji en redes", text: "Deja que alguien publique un emoji en tu estado de redes.", drink: "2 Tragos" }, { id: "6♥️", suit: "♥️", rank: "6", category: "Corazones", title: "Actúa como un animal", text: "Actúa como un animal por 1 minuto.", drink: "2 Tragos" }, { id: "7♥️", suit: "♥️", rank: "7", category: "Corazones", title: "Cumplido exagerado", text: "Dale un cumplido exagerado al de tu izquierda.", drink: "1 Trago" }, { id: "8♥️", suit: "♥️", rank: "8", category: "Corazones", title: "Cuenta un secreto", text: "Cuenta un secreto (no muy grave).", drink: "2 Tragos" }, { id: "9♥️", suit: "♥️", rank: "9", category: "Corazones", title: "Canta a pleno pulmón", text: "Canta el estribillo de una canción a pleno pulmón.", drink: "2 Tragos" }, { id: "10♥️", suit: "♥️", rank: "10", category: "Corazones", title: "Mirada fija", text: "Mira fijamente a alguien por 30 segundos sin reírte.", drink: "2 Tragos" }, { id: "J♥️", suit: "♥️", rank: "J", category: "Corazones", title: "Ve de la mano", text: 'Ve de la mano con un "pareja" un turno entero.', drink: "3 Tragos" }, { id: "Q♥️", suit: "♥️", rank: "Q", category: "Corazones", title: 'Envía "Te quiero"', text: 'Envía un "Te quiero" al tercer chat de tu WhatsApp.', drink: "4 Tragos" }, { id: "K♥️", suit: "♥️", rank: "K", category: "Corazones", title: "Declara tu amor", text: "Declara tu amor a un objeto de la sala.", drink: "3 Tragos" }, { id: "As♦️", suit: "♦️", rank: "As", category: "Diamantes", title: "Intercambia un zapato", text: "Intercambia un zapato con el de tu derecha.", drink: "3 Tragos" }, { id: "2♦️", suit: "♦️", rank: "2", category: "Diamantes", title: "Abecedario al revés", text: "Di el abecedario al revés en 20 segundos.", drink: "1 Trago" }, { id: "3♦️", suit: "♦️", rank: "3", category: "Diamantes", title: "Equilibrio en un pie", text: "Haz equilibrio en un pie hasta tu siguiente turno.", drink: "1 Trago" }, { id: "4♦️", suit: "♦️", rank: "4", category: "Diamantes", title: "Nombra 10 frutas", text: "Nombra 10 frutas en 10 segundos.", drink: "1 Trago" }, { id: "5♦️", suit: "♦️", rank: "5", category: "Diamantes", title: "Tócate la nariz", text: "Intenta tocarte la nariz con la lengua.", drink: "1 Trago" }, { id: "6♦️", suit: "♦️", rank: "6", category: "Diamantes", title: "Resuelve un acertijo", text: "Resuelve un acertijo del grupo.", drink: "2 Tragos" }, { id: "7♦️", suit: "♦️", rank: "7", category: "Diamantes", title: "Dibuja a alguien", text: "Dibuja a alguien y que el grupo adivine en 30 seg.", drink: "2 Tragos" }, { id: "8♦️", suit: "♦️", rank: "8", category: "Diamantes", title: "15 sentadillas rápidas", text: "Haz 15 sentadillas rápidas.", drink: "2 Tragos" }, { id: "9♦️", suit: "♦️", rank: "9", category: "Diamantes", title: "Recita un trabalenguas", text: "Recita un trabalenguas sin fallar.", drink: "2 Tragos" }, { id: "10♦️", suit: "♦️", rank: "10", category: "Diamantes", title: "Estatua por 2 minutos", text: "Quédate como estatua durante 2 minutos.", drink: "2 Tragos" }, { id: "J♦️", suit: "♦️", rank: "J", category: "Diamantes", title: "Acento extranjero", text: "Habla con acento extranjero por 3 turnos.", drink: "3 Tragos" }, { id: "Q♦️", suit: "♦️", rank: "Q", category: "Diamantes", title: "Haz malabares", text: "Haz malabares con 3 objetos suaves.", drink: "3 Tragos" }, { id: "K♦️", suit: "♦️", rank: "K", category: "Diamantes", title: "Busca colores", text: "Busca algo azul, rojo y verde en 10 segundos.", drink: "3 Tragos" }, { id: "As♣️", suit: "♣️", rank: "As", category: "Tréboles", title: "Elige alguien para beber", text: "Elige a una persona para que beba un trago contigo.", drink: "Sin escape" }, { id: "2♣️", suit: "♣️", rank: "2", category: "Tréboles", title: "Cara o cruz", text: "Cara o cruz: si pierdes, no hablas un turno.", drink: "1 Trago" }, { id: "3♣️", suit: "♣️", rank: "3", category: "Tréboles", title: "Pregunta de cultura general", text: "Responde una pregunta de cultura general.", drink: "1 Trago" }, { id: "4♣️", suit: "♣️", rank: "4", category: "Tréboles", title: "El primero que se ría", text: "El primero que se ría cumple tu reto.", drink: "1 Trago" }, { id: "5♣️", suit: "♣️", rank: "5", category: "Tréboles", title: "Piedra, papel o tijera", text: "Piedra, papel o tijera contra el grupo.", drink: "1 Trago" }, { id: "6♣️", suit: "♣️", rank: "6", category: "Tréboles", title: "Acepta un apodo", text: "Acepta un apodo que el grupo te ponga.", drink: "2 Tragos" }, { id: "7♣️", suit: "♣️", rank: "7", category: "Tréboles", title: 'No digas "SÍ"', text: 'No digas la palabra "SÍ" hasta tu próximo turno.', drink: "2 Tragos" }, { id: "8♣️", suit: "♣️", rank: "8", category: "Tréboles", title: "Cambia de sitio", text: "Cambia de sitio con alguien al azar.", drink: "1 Trago" }, { id: "9♣️", suit: "♣️", rank: "9", category: "Tréboles", title: "Imita a un famoso", text: "Imita a un famoso y que alguien adivine.", drink: "2 Tragos" }, { id: "10♣️", suit: "♣️", rank: "10", category: "Tréboles", title: "Reto flash del grupo", text: "El grupo inventa un reto flash para ti.", drink: "3 Tragos" }, { id: "J♣️", suit: "♣️", rank: "J", category: "Tréboles", title: "Susurra todo", text: "Susurra todo lo que digas por 2 turnos.", drink: "2 Tragos" }, { id: "Q♣️", suit: "♣️", rank: "Q", category: "Tréboles", title: "Broma telefónica", text: "Haz una broma telefónica muy corta.", drink: "4 Tragos" }, { id: "K♣️", suit: "♣️", rank: "K", category: "Tréboles", title: "Inventa una regla", text: "Inventa una regla para todos (ej. no tocar el móvil).", drink: "3 Tragos" }, { id: "As♠️", suit: "♠️", rank: "As", category: "Picas", title: "Reverencia para todos", text: "Todos deben hacerte una reverencia.", drink: "Al que no lo haga, 1 trago" }, { id: "2♠️", suit: "♠️", rank: "2", category: "Picas", title: "Camina como modelo", text: "Camina como modelo de pasarela.", drink: "1 Trago" }, { id: "3♠️", suit: "♠️", rank: "3", category: "Picas", title: "Ojos cerrados", text: "Mantén los ojos cerrados un turno completo.", drink: "1 Trago" }, { id: "4♠️", suit: "♠️", rank: "4", category: "Picas", title: "Hazle cosquillas", text: "Hazle cosquillas a alguien por 5 segundos.", drink: "1 Trago" }, { id: "5♠️", suit: "♠️", rank: "5", category: "Picas", title: "Cuenta un chiste", text: "Cuenta un chiste; si nadie se ríe, bebes.", drink: "2 Tragos" }, { id: "6♠️", suit: "♠️", rank: "6", category: "Picas", title: "Peinado loco", text: "Deja que alguien te despeine o te haga un peinado loco.", drink: "2 Tragos" }, { id: "7♠️", suit: "♠️", rank: "7", category: "Picas", title: "Bebe sin manos", text: "Bebe un vaso de agua sin usar las manos.", drink: "2 Tragos" }, { id: "8♠️", suit: "♠️", rank: "8", category: "Picas", title: "Habla rimando", text: "Habla rimando durante todo un turno.", drink: "2 Tragos" }, { id: "9♠️", suit: "♠️", rank: "9", category: "Picas", title: "Actúa como robot", text: "Actúa como si fueras un robot.", drink: "2 Tragos" }, { id: "10♠️", suit: "♠️", rank: "10", category: "Picas", title: "Escriban en tu brazo", text: "Deja que te escriban algo en el brazo con marcador.", drink: "3 Tragos" }, { id: "J♠️", suit: "♠️", rank: "J", category: "Picas", title: "Moonwalk", text: 'Haz el paso "Moonwalk" de Michael Jackson.', drink: "3 Tragos" }, { id: "Q♠️", suit: "♠️", rank: "Q", category: "Picas", title: "Lamer tu codo", text: "Intenta lamer tu propio codo.", drink: "2 Tragos" }, { id: "K♠️", suit: "♠️", rank: "K", category: "Picas", title: "Guardaespaldas", text: 'Alguien será tu "guardaespaldas" un turno.', drink: "3 Tragos" }, { id: "Comodín 1", suit: "\uD83C\uDCCF", rank: "Comodín", category: "Comodines", title: "Intercambia tu mano", text: "Intercambia tu mano de cartas (o tu suerte) con alguien.", drink: "4 Tragos" }, { id: "Comodín 2", suit: "\uD83C\uDCCF", rank: "Comodín", category: "Comodines", title: "Cancela un reto", text: "Cancela el reto de cualquier jugador ahora mismo.", drink: "4 Tragos" }];
+
+        // ========================================
+        // JUEGOS NUEVOS - DATOS
+        // ========================================
+
+        // ¿QUIÉN ES MÁS? - 100 Preguntas
+        const QUIEN_ES_MAS = ["¿Quién es más probable que se emborrache primero?", "¿Quién es más probable que olvide esta noche?", "¿Quién es más probable que se case primero?", "¿Quién es más probable que tenga más hijos?", "¿Quién es más probable que se haga famoso?", "¿Quién es más probable que se vaya a vivir al extranjero?", "¿Quién es más probable que termine en la cárcel?", "¿Quién es más probable que gane la lotería?", "¿Quién es más probable que olvide un cumpleaños?", "¿Quién es más probable que llore viendo una película?", "¿Quién es más probable que se convierta en millonario?", "¿Quién es más probable que aparezca en las noticias?", "¿Quién es más probable que tenga una relación secreta?", "¿Quién es más probable que se vuelva vegetariano?", "¿Quién es más probable que sobreviva a un apocalipsis zombie?", "¿Quién es más probable que se pierda en su ciudad?", "¿Quién es más probable que invente algo revolucionario?", "¿Quién es más probable que adopte 10 gatos?", "¿Quién es más probable que se una a un reality show?", "¿Quién es más probable que escriba un libro?", "¿Quién es más probable que se haga tatuajes?", "¿Quién es más probable que olvide dónde estacionó?", "¿Quién es más probable que se enamore de su amigo?", "¿Quién es más probable que tenga romance de oficina?", "¿Quién es más probable que se convierta en YouTuber?", "¿Quién es más probable que gane un premio?", "¿Quién es más probable que se mude a una isla?", "¿Quién es más probable que sea minimalista?", "¿Quién es más probable que se convierta en chef?", "¿Quién es más probable que salga en revista?", "¿Quién es más probable que organice fiestas?", "¿Quién es más probable que se levante primero?", "¿Quién es más probable que duerma hasta el mediodía?", "¿Quién es más probable que rompa su teléfono?", "¿Quién es más probable que tarde en arreglarse?", "¿Quién es más probable que sea stripper por una noche?", "¿Quién es más probable que sea adicto a redes?", "¿Quién es más probable que haga viaje improvisado?", "¿Quién es más probable que cambie de carrera?", "¿Quién es más probable que sea padrino/madrina?", "¿Quién es más probable que tenga más ex parejas?", "¿Quién es más probable que mienta sobre su edad?", "¿Quién es más probable que sea el más dramático?", "¿Quién es más probable que tenga romance de verano?", "¿Quién es más probable que sea adicto al gym?", "¿Quién es más probable que sea el alma de la fiesta?", "¿Quién es más probable que sea millonario a los 30?", "¿Quién es más probable que tenga mascota rara?", "¿Quién es más probable que se pierda en un mall?", "¿Quién es más probable que gane concurso de baile?", "¿Quién es más probable que tenga hijos primero?", "¿Quién es más probable que viva con sus padres?", "¿Quién es más probable que tenga accidente tonto?", "¿Quién es más probable que sea influencer?", "¿Quién es más probable que diga 'te lo dije'?", "¿Quién es más probable que sea el más tacaño?", "¿Quién es más probable que sea el más generoso?", "¿Quién es más probable que tenga más seguidores?", "¿Quién es más probable que sea arrestado?", "¿Quién es más probable que gaste todo en un día?", "¿Quién es más probable que sea presidente?", "¿Quién es más probable que sea mejor padre/madre?", "¿Quién es más probable que haga paracaidismo?", "¿Quién es más probable que sea el más chismoso?", "¿Quién es más probable que llore en público?", "¿Quién es más probable que se haga cirugía?", "¿Quién es más probable que viva en 10 países?", "¿Quién es más probable que cambie de look?", "¿Quién es más probable que se convierta en vegano?", "¿Quién es más probable que sea el más romántico?", "¿Quién es más probable que tenga doble vida?", "¿Quién es más probable que cante mal en karaoke?", "¿Quién es más probable que sea mal cocinero?", "¿Quién es más probable que se convierta en ermitaño?", "¿Quién es más probable que sea DJ?", "¿Quién es más probable que sea modelo?", "¿Quién es más probable que tenga accidentes de coche?", "¿Quién es más probable que olvide cumpleaños de pareja?", "¿Quién es más probable que se duerma en lugares raros?", "¿Quién es más probable que tenga colección extraña?", "¿Quién es más probable que sea adicto al café?", "¿Quién es más probable que gane concurso de comida?", "¿Quién es más probable que sea el más celoso?", "¿Quién es más probable que tenga miedo a alturas?", "¿Quién es más probable que sea actor/actriz?", "¿Quién es más probable que tenga varias parejas?", "¿Quién es más probable que sea dramático por enfermedad?", "¿Quién es más probable que pierda su billetera?", "¿Quién es más probable que grite en montaña rusa?", "¿Quién es más probable que sea el más supersticioso?", "¿Quién es más probable que crea en extraterrestres?", "¿Quién es más probable que tenga banda de música?", "¿Quién es más probable que sea impuntual?", "¿Quién es más probable que sea organizado?", "¿Quién es más probable que se enamore a primera vista?", "¿Quién es más probable que tenga romance prohibido?", "¿Quién es más probable que se case último?", "¿Quién es más probable que tenga gemelos?"];
+
+        // BOMBA DE PALABRAS - 50 Categorías
+        const CATEGORIAS_BOMBA = ["Países de Europa", "Marcas de coche", "Películas de Disney", "Frutas tropicales", "Superhéroes de Marvel", "Capitales del mundo", "Instrumentos musicales", "Deportes olímpicos", "Tipos de pasta", "Animales marinos", "Colores en español", "Marcas de ropa", "Ríos del mundo", "Montañas famosas", "Presidentes de USA", "Planetas sistema solar", "Tipos de queso", "Bebidas alcohólicas", "Postres famosos", "Razas de perro", "Idiomas del mundo", "Monumentos famosos", "Ciudades de España", "Árboles comunes", "Flores populares", "Tipos de sushi", "Marcas de tecnología", "Redes sociales", "Géneros musicales", "Películas de Pixar", "Series de Netflix", "Videojuegos famosos", "Superhéroes de DC", "Países de Asia", "Países de América", "Países de África", "Elementos químicos", "Huesos del cuerpo", "Órganos del cuerpo", "Profesiones", "Herramientas", "Utensilios de cocina", "Tipos de pan", "Tipos de café", "Cocteles clásicos", "Bailes latinos", "Estilos de música", "Equipos de fútbol", "Aerolíneas", "Marcas de refresco"];
+
+        // RETO EN CADENA - 60 Micro-Retos
+        const MICRO_RETOS = ["Aplaude 3 veces", "Guiña un ojo", "Toca tu nariz", "Gira en tu sitio", "Salta en un pie", "Haz una reverencia", "Silba 2 segundos", "Toca oreja izquierda", "Levanta mano derecha", "Di 'Hola' en inglés", "Chasquea dedos", "Toca el suelo", "Palmada en mesa", "Saca la lengua", "Cierra un ojo", "Levanta un pie", "Toca tu cabeza", "Aplaude despacio", "Sopla al aire", "Mueve las cejas", "Pestañea rápido", "Haz cara seria", "Sonríe grande", "Frunce el ceño", "Cruza los brazos", "Manos en cintura", "Señala arriba", "Señala abajo", "Círculo con dedo", "Toca tu barbilla", "Toca tu hombro", "Rasca tu cabeza", "Toca tu rodilla", "Aplaude arriba cabeza", "Palmada en pierna", "Toca tu pie", "Saludo militar", "Reverencia japonesa", "Gesto de llamar", "Señal de OK", "Pulgar arriba", "Pulgar abajo", "Señal de paz", "Corazón con manos", "Gesto de dinero", "Gesto de silencio", "Gesto de no sé", "Gesto de pensar", "Gesto de sorpresa", "Gesto aburrido", "Gesto cansado", "Gesto hambre", "Gesto sed", "Gesto frío", "Gesto calor", "Gesto miedo", "Gesto feliz", "Gesto triste", "Gesto enojado", "Gesto enamorado"];
+
+        // DILEMA DEL REY - 75 Dilemas
+        const DILEMAS_REY = [{ "a": "Pizza el resto de tu vida", "b": "Nunca comer queso" }, { "a": "Poder volar", "b": "Ser invisible" }, { "a": "Leer mentes", "b": "Ver el futuro" }, { "a": "Vivir sin música", "b": "Vivir sin películas" }, { "a": "Perder recuerdos", "b": "No crear nuevos" }, { "a": "Rico pero solo", "b": "Pobre con amor" }, { "a": "Siempre verdad", "b": "Siempre mentir" }, { "a": "Hablar con animales", "b": "Hablar todos idiomas" }, { "a": "Teletransportarse", "b": "Viajar en tiempo" }, { "a": "Vivir 1000 años", "b": "10 vidas de 100" }, { "a": "Sin internet", "b": "Sin televisión" }, { "a": "Famoso odiado", "b": "Desconocido amado" }, { "a": "Perder memoria anual", "b": "Nunca dormir bien" }, { "a": "Sin brazos", "b": "Sin piernas" }, { "a": "Inteligente feo", "b": "Guapo tonto" }, { "a": "Vivir en pasado", "b": "Vivir en futuro" }, { "a": "Respirar bajo agua", "b": "Volar" }, { "a": "10 millones", "b": "Amor verdadero" }, { "a": "Inmortal", "b": "Juventud eterna" }, { "a": "Sin dulce", "b": "Sin salado" }, { "a": "Sin celular", "b": "Sin computadora" }, { "a": "Casarte con crush", "b": "1 millón dólares" }, { "a": "Tamaño ratón", "b": "Tamaño elefante" }, { "a": "Nunca mentir", "b": "Nunca saber mentiras" }, { "a": "Comida fría", "b": "Comida caliente" }, { "a": "Isla desierta", "b": "Ciudad sobrepoblada" }, { "a": "Super fuerza", "b": "Super velocidad" }, { "a": "Presidente", "b": "Multimillonario" }, { "a": "Perder gusto", "b": "Perder olfato" }, { "a": "Hablar cantando", "b": "Hablar gritando" }, { "a": "50 hijos", "b": "Nunca tener hijos" }, { "a": "Comer con manos", "b": "Palillos chinos" }, { "a": "Genio solo", "b": "Tonto con amigos" }, { "a": "Controlar fuego", "b": "Controlar agua" }, { "a": "Vivir en espacio", "b": "Vivir bajo mar" }, { "a": "Siempre frío", "b": "Siempre calor" }, { "a": "Dormir 2 horas", "b": "Dormir 20 horas" }, { "a": "Sudar miel", "b": "Llorar chocolate" }, { "a": "3 ojos", "b": "3 brazos" }, { "a": "Sin redes sociales", "b": "Sin ver amigos" }, { "a": "Adicto ejercicio", "b": "Adicto comida chatarra" }, { "a": "Sin verano", "b": "Sin invierno" }, { "a": "Piel de cocodrilo", "b": "Pelo de león" }, { "a": "Llorar sangre", "b": "Sudar aceite" }, { "a": "Ser vampiro", "b": "Ser hombre lobo" }, { "a": "Rayos X en ojos", "b": "Ser elástico" }, { "a": "100 años pasado", "b": "100 años futuro" }, { "a": "Ser ciego", "b": "Ser sordo" }, { "a": "10 dedos por mano", "b": "Sin pulgares" }, { "a": "Curar a otros", "b": "Inmune a todo" }, { "a": "Cola dinosaurio", "b": "Cuernos de toro" }, { "a": "Hablar con fantasmas", "b": "Ver futuro en sueños" }, { "a": "Famoso TikTok", "b": "Famoso YouTube" }, { "a": "Olvidar pasado", "b": "No crear recuerdos" }, { "a": "Adicto trabajo", "b": "Nunca trabajar" }, { "a": "100 gatos", "b": "100 perros" }, { "a": "Cambiar de sexo", "b": "Cambiar de edad" }, { "a": "WiFi gratis", "b": "Gasolina gratis" }, { "a": "Saber fecha muerte", "b": "Saber cómo morir" }, { "a": "Mejor en todo solo", "b": "Mediocre con amigos" }, { "a": "Sin dolor", "b": "Sin miedo" }, { "a": "Ser robot", "b": "Ser cyborg" }, { "a": "1 diente gigante", "b": "100 dientes pequeños" }, { "a": "Controlar clima", "b": "Controlar tiempo" }, { "a": "Rey país pobre", "b": "Ciudadano país rico" }, { "a": "Sin electricidad", "b": "Sin agua corriente" }, { "a": "Orejas elefante", "b": "Trompa elefante" }, { "a": "Invisible mudo", "b": "Volar lento" }, { "a": "Vivir 500 enfermo", "b": "Vivir 50 saludable" }, { "a": "Pelo cambia color", "b": "Ojos cambian color" }, { "a": "Adicto dormir", "b": "Insomne siempre" }, { "a": "Uñas crecen 1cm/día", "b": "Pelo crece 1cm/día" }, { "a": "Multiplicarte", "b": "Dividirte en dos" }];
+
+                // Biblioteca
+        let libTab = 'toxic';
+
+        // O SE CAGA
+        const OSECAGA_TOTAL_CARDS = 152;
+        const OSECAGA_DATA = {};
+        for (let i = 1; i <= OSECAGA_TOTAL_CARDS; i++) {
+            if (i === 89) continue; // Saltar carta 89 que no existe
+            const filename = `./O SE CAGA/o se caga_${i}.jpg`;
+            if ([5, 6, 7, 10, 15, 23, 33, 41, 42, 50, 51, 60, 61, 74, 75, 87, 88, 100, 101, 115, 120, 131, 140, 150].includes(i)) {
+                OSECAGA_DATA[filename] = 'reto';
+            } else if ([1, 2, 8, 9, 20, 21, 22, 25, 35, 45, 55, 65, 70, 71, 80, 81, 95, 105, 110, 125, 135, 145].includes(i)) {
+                OSECAGA_DATA[filename] = 'flash';
+            } else if ([3, 4, 11, 12, 13, 24, 34, 40, 43, 54, 64, 72, 82, 92, 102, 112, 122, 132, 142].includes(i)) {
+                OSECAGA_DATA[filename] = 'juego';
+            } else if ([90, 91, 151, 152, 14, 16, 17, 18, 19, 26, 27, 28, 29, 36, 37, 38, 39, 97].includes(i)) {
+                OSECAGA_DATA[filename] = 'regla';
+            } else if ([30, 31, 32, 146, 147, 148, 149].includes(i)) {
+                OSECAGA_DATA[filename] = 'suerte';
+            } else {
+                OSECAGA_DATA[filename] = 'reto';
+            }
+        }
+        const OSECAGA_ALL_CARDS = Object.keys(OSECAGA_DATA);
+
+        // --- State Management ---
+        let state = {
+            view: 'menu',
+            // Sistema unificado de jugadores (GLOBAL)
+            players: [],
+            currentPlayerIndex: 0,
+            gameStarted: false,
+
+            // Toxic Cards
+            toxicDeck: [],
+            toxicIndex: -1,
+            toxicCategory: ['TODAS'],
+
+            // O Se Caga
+            osecaga: {
+                deck: [],
+                index: -1,
+                categories: ['all'],
+                animationClass: ''
+            },
+
+            // Sistema de Papelera (Universal)
+            trash: {
+                toxic: [],
+                osecaga: [],
+                poker: []
+            },
+
+            // Poker Caliente
+            pokerDeck: [],
+            pokerIndex: -1,
+
+            // El Sabio
+            sabio: {
+                current: null,
+                next: null,
+                feedback: null,
+                mode: 'participante',
+                drinks: 0,
+                questionType: null
+            },
+
+            // ¿Quién Es Más?
+            quienEsMas: {
+                currentQuestion: null,
+                questionIndex: 0,
+                usedQuestions: [],
+                scores: {}
+            },
+
+            // Bomba de Palabras
+            bomba: {
+                currentCategory: null,
+                categoryIndex: 0,
+                timerDuration: 0,
+                isActive: false,
+                timerInterval: null
+            },
+
+            // Reto en Cadena
+            retoCadena: {
+                currentChain: [],
+                usedRetos: [],
+                currentRound: 1
+            },
+
+            // Dilema del Rey
+            dilemaRey: {
+                currentDilema: null,
+                dilemaIndex: 0,
+                votesA: 0,
+                votesB: 0
+            },
+
+            // Mímica Express
+            mimicaExpress: {
+                currentWord: null,
+                wordIndex: 0,
+                usedWords: [],
+                timeLeft: 20,
+                timerInterval: null,
+                currentActor: null
+            },
+            
+            // O SE CAGA
+            osecaga: {
+               deck: [],
+               index: -1,
+               categories: ['all'],
+               animationClass: 'card-enter'
+            },
+
+            // Biblioteca
+            libTab: 'toxic',
+            
+            // Papelera Universal
+            trash: {
+                toxic: [], poker: [], osecaga: [], quienEsMas: [], bomba: [], cadena: [], dilema: [], mimica: []
+            },
+
+            // Otros
+            swipeDirection: null
+        };
+
+        // --- Touch Gesture System ---
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchEndX = 0;
+        let touchEndY = 0;
+        const minSwipeDistance = 50;
+
+        function handleTouchStart(e) {
+            touchStartX = e.changedTouches[0].screenX;
+            touchStartY = e.changedTouches[0].screenY;
+        }
+
+        function handleTouchEnd(e) {
+            touchEndX = e.changedTouches[0].screenX;
+            touchEndY = e.changedTouches[0].screenY;
+            handleSwipe();
+        }
+
+        function handleSwipe() {
+            const diffX = touchEndX - touchStartX;
+            const diffY = touchEndY - touchStartY;
+
+            // Solo procesar swipes horizontales significativos
+            if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > minSwipeDistance) {
+                if (diffX > 0) {
+                    // Swipe right - navegación contextual
+                    onSwipeRight();
+                } else {
+                    // Swipe left - siguiente carta
+                    onSwipeLeft();
+                }
+            }
+        }
+
+        function onSwipeLeft() {
+            vibrate(30);
+            if (state.view === 'toxic' && state.toxicIndex >= 0) {
+                drawToxicCard();
+            } else if (state.view === 'poker' && state.pokerIndex >= 0) {
+                drawPokerCard();
+            } else if (state.view === 'osecaga' && state.osecaga.index >= 0) {
+                drawOSeCagaCard();
+            }
+        }
+
+        function onSwipeRight() {
+            // Ya no se permite regresar cartas en O Se Caga
+            vibrate(30);
+        }
+
+        // --- Haptic Feedback ---
+        function vibrate(duration = 50) {
+            if ('vibrate' in navigator) {
+                navigator.vibrate(duration);
+            }
+        }
+
+        // --- Enhanced Animations ---
+        function addCardFlipAnimation(element) {
+            if (element) {
+                element.classList.add('card-flip');
+                setTimeout(() => {
+                    element.classList.remove('card-flip');
+                }, 600);
+            }
+        }
+
+        function addShakeAnimation(element) {
+            if (element) {
+                element.classList.add('shake');
+                setTimeout(() => {
+                    element.classList.remove('shake');
+                }, 500);
+            }
+        }
+
+        // --- Toast Notifications ---
+        function showToast(message, duration = 2000) {
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 glass px-6 py-3 rounded-2xl z-50 animate-fade-in text-sm font-bold gold-text';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translate(-50%, 20px)';
+                toast.style.transition = 'all 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, duration);
+        }
+
+        // --- Confetti Effect (for wins) ---
+        function createConfetti() {
+            const colors = ['#FFD700', '#D4AF37', '#B8860B', '#FF6B6B', '#4ECDC4'];
+            const confettiCount = 50;
+
+            for (let i = 0; i < confettiCount; i++) {
+                const confetti = document.createElement('div');
+                confetti.style.cssText = `
+                    position: fixed;
+                    width: 10px;
+                    height: 10px;
+                    background: ${colors[Math.floor(Math.random() * colors.length)]};
+                    left: ${Math.random() * 100}%;
+                    top: -10px;
+                    opacity: 1;
+                    transform: rotate(${Math.random() * 360}deg);
+                    z-index: 9999;
+                    pointer-events: none;
+                    border-radius: 2px;
+                `;
+                document.body.appendChild(confetti);
+
+                const fall = confetti.animate([
+                    { top: '-10px', opacity: 1 },
+                    { top: '100vh', opacity: 0, transform: `rotate(${Math.random() * 720}deg) translateX(${Math.random() * 200 - 100}px)` }
+                ], {
+                    duration: 2000 + Math.random() * 1000,
+                    easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+                });
+
+                fall.onfinish = () => confetti.remove();
+            }
+            vibrate([50, 100, 50]);
+        }
+
+        // Initialize state from localStorage
+        const savedState = localStorage.getItem('as_bajo_la_manga_state');
+        if (savedState) {
+            try {
+                const parsed = JSON.parse(savedState);
+                // Restaurar estado EXCEPTO datos de jugadores (se resetean siempre)
+                const baseState = { ...state };
+                state = {
+                    ...baseState,
+                    ...parsed,
+                    players: [],              // ✅ SIEMPRE vacío al recargar
+                    currentPlayerIndex: 0,    // ✅ SIEMPRE 0
+                    gameStarted: false        // ✅ SIEMPRE false
+                };
+                
+                // Asegurar que las subpropiedades críticas no se pierdan al sobrescribir
+                if (!state.trash) state.trash = {};
+                ['toxic', 'poker', 'osecaga', 'quienEsMas', 'bomba', 'cadena', 'dilema', 'mimica'].forEach(k => {
+                    if (!state.trash[k]) state.trash[k] = [];
+                });
+                
+                if (!state.osecaga) state.osecaga = baseState.osecaga;
+                if (state.toxicDeck.length === 0 && TOXIC_CARDS.length > 0) resetToxicDeck();
+                if (state.pokerDeck.length === 0 && POKER_CARDS.length > 0) resetPokerDeck();
+                if (state.osecaga.deck.length === 0 && OSECAGA_ALL_CARDS.length > 0) resetOSeCagaDeck();
+                // Siempre redirigir a setup si no hay jugadores
+                state.view = 'setup';
+            } catch (e) {
+                console.error("Error loading state", e);
+                resetAll();
+            }
+        } else {
+            resetAll();
+        }
+        // Sin jugadores → setup siempre
+        if (state.players.length < 2) state.view = 'setup';
+
+        function saveState() {
+            localStorage.setItem('as_bajo_la_manga_state', JSON.stringify(state));
+        }
+
+        // --- Utilidades ---
+        function shuffleArray(array) {
+            let currentIndex = array.length, randomIndex;
+            while (currentIndex !== 0) {
+                randomIndex = Math.floor(Math.random() * currentIndex);
+                currentIndex--;
+                [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+            }
+            return array;
+        }
+
+        function resetAll() {
+            resetToxicDeck();
+            resetPokerDeck();
+            resetOSeCagaDeck();
+            state.view = 'menu';
+            saveState();
+        }
+
+        function resetToxicDeck() {
+            let filtered = TOXIC_CARDS.filter(c => !state.trash.toxic.includes(String(c.id)));
+            
+            // Filtrar por categorías seleccionadas (si no es TODAS)
+            if (!state.toxicCategory.includes('TODAS') && state.toxicCategory.length > 0) {
+                filtered = filtered.filter(c => state.toxicCategory.includes(c.cat));
+            }
+            
+            state.toxicDeck = shuffleArray([...filtered]);
+            state.toxicIndex = -1;
+        }
+
+        function resetPokerDeck() {
+            const filtered = POKER_CARDS.filter(c => !state.trash.poker.includes(String(c.id)));
+            state.pokerDeck = shuffleArray([...filtered]);
+            state.pokerIndex = -1;
+        }
+
+        function resetOSeCagaDeck() {
+            try {
+                // Asegurar que el estado existe
+                if (!state.trash) state.trash = { osecaga: [] };
+                if (!state.trash.osecaga) state.trash.osecaga = [];
+                if (!state.osecaga.categories) state.osecaga.categories = ['all'];
+
+                let filtered = OSECAGA_ALL_CARDS.filter(c => !state.trash.osecaga.includes(c));
+                
+                // Si hay categorías seleccionadas y no es "todas"
+                if (!state.osecaga.categories.includes('all')) {
+                    filtered = filtered.filter(c => state.osecaga.categories.includes(OSECAGA_DATA[c]));
+                }
+
+                state.osecaga.deck = shuffleArray([...filtered]);
+                state.osecaga.index = -1;
+                saveState();
+            } catch (e) {
+                console.error("Error resetting OSeCaga deck:", e);
+                state.osecaga.deck = [...OSECAGA_ALL_CARDS];
+            }
+        }
+
+        // --- Sistema de Papelera ---
+        function moverAPapelera(juego, id) {
+            if (!state.trash) state.trash = { toxic: [], poker: [], osecaga: [], quienEsMas: [], bomba: [], cadena: [], dilema: [], mimica: [] };
+            if (!state.trash[juego].includes(String(id))) {
+                state.trash[juego].push(String(id));
+                saveState();
+                showToast('🗑️ Movido a la papelera');
+                if (state.view === 'biblioteca') { filterLib(); vibrate(30); }
+            }
+        }
+
+        function restaurarDePapelera(juego, id) {
+            if (!state.trash || !state.trash[juego]) return;
+            state.trash[juego] = state.trash[juego].filter(item => item !== String(id));
+            saveState();
+            showToast('♻️ Restaurado con éxito');
+            if (state.view === 'biblioteca') { filterLib(); vibrate(30); }
+        }
+
+        function getRandomCard() {
+            const suits = ['♥️', '♦️', '♣️', '♠️'];
+            const ranks = ['As', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+            const suit = suits[Math.floor(Math.random() * suits.length)];
+            const rank = ranks[Math.floor(Math.random() * ranks.length)];
+            return { rank, suit, id: `${rank}${suit}` };
+        }
+
+        // --- Render Functions ---
+
+        const views = {
+            menu: () => `
+                <div class="space-y-4 animate-fade-in py-4">
+                    <!-- Jugadores activos -->
+                    <button onclick="changeView('setup')" class="w-full glass p-4 rounded-2xl flex items-center gap-4 border-white/10 btn-hover ripple touch-feedback">
+                        <div class="flex gap-1">
+                            ${(state.players || []).slice(0,5).map((_,i) => `<span class="text-xl">${['🔵','🟢','🟡','🔴','🟣','🟠'][i % 6]}</span>`).join('')}
+                            ${state.players.length > 5 ? `<span class="text-xs text-slate-400 self-center">+${state.players.length - 5}</span>` : ''}
+                        </div>
+                        <div class="text-left flex-1">
+                            <p class="text-xs text-slate-500 uppercase tracking-widest font-bold">Jugadores</p>
+                            <p class="text-sm font-bold text-white">${(state.players || []).map(p => p.name).join(', ')}</p>
+                        </div>
+                        <span class="text-slate-500 text-sm">✏️</span>
+                    </button>
+
+                    <!-- Juegos de Cartas -->
+                    <div class="text-sm uppercase tracking-widest text-slate-500 font-bold px-2 mt-2">🃏 Juegos de Cartas</div>
+                    
+                    <button onclick="changeView('toxic')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-amber-500/20 ripple touch-feedback">
+                        <div class="bg-amber-500/20 p-4 rounded-2xl group-hover:bg-amber-500/30 transition-colors">
+                            <span class="text-2xl">🔥</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold gold-text">TOXIC CARDS</h2>
+                            <p class="text-slate-400 text-sm">Verdades y retos picantes</p>
+                        </div>
+                    </button>
+
+                    <button onclick="changeView('poker')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-red-500/20 ripple touch-feedback">
+                        <div class="bg-red-500/20 p-4 rounded-2xl group-hover:bg-red-500/30 transition-colors">
+                            <span class="text-2xl">🃏</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-red-500">POKER CALIENTE</h2>
+                            <p class="text-slate-400 text-sm">Dinámicas con baraja</p>
+                        </div>
+                    </button>
+
+                    <button onclick="changeView('sabio')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-blue-500/20 ripple touch-feedback">
+                        <div class="bg-blue-500/20 p-4 rounded-2xl group-hover:bg-blue-500/30 transition-colors">
+                            <span class="text-2xl">🧙‍♂️</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-blue-400">EL SABIO DEL GUARO</h2>
+                            <p class="text-slate-400 text-sm">Adivina la siguiente carta</p>
+                        </div>
+                    </button>
+
+                    <button onclick="changeView('osecaga')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-emerald-500/20 ripple touch-feedback">
+                        <div class="bg-emerald-500/20 p-4 rounded-2xl group-hover:bg-emerald-500/30 transition-colors">
+                            <span class="text-2xl">💩</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-emerald-400">O SE CAGA</h2>
+                            <p class="text-slate-400 text-sm">Descubre el castigo o reto</p>
+                        </div>
+                    </button>
+
+                    <!-- Juegos de Grupo Nuevos -->
+                    <div class="text-sm uppercase tracking-widest text-slate-500 font-bold px-2 mt-8">👥 Juegos de Grupo</div>
+
+                    <button onclick="changeView('quienEsMas')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-amber-500/20 ripple touch-feedback">
+                        <div class="bg-amber-500/20 p-4 rounded-2xl group-hover:bg-amber-500/30 transition-colors">
+                            <span class="text-2xl">🏆</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-amber-400">¿QUIÉN ES MÁS...?</h2>
+                            <p class="text-slate-400 text-sm">Todos votan, el más votado bebe</p>
+                        </div>
+                    </button>
+
+                    <button onclick="changeView('bomba')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-red-500/20 ripple touch-feedback">
+                        <div class="bg-red-500/20 p-4 rounded-2xl group-hover:bg-red-500/30 transition-colors">
+                            <span class="text-2xl">💣</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-red-500">BOMBA DE PALABRAS</h2>
+                            <p class="text-slate-400 text-sm">Di palabras antes que explote</p>
+                        </div>
+                    </button>
+
+                    <button onclick="changeView('retoCadena')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-blue-500/20 ripple touch-feedback">
+                        <div class="bg-blue-500/20 p-4 rounded-2xl group-hover:bg-blue-500/30 transition-colors">
+                            <span class="text-2xl">⛓️</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-blue-400">RETO EN CADENA</h2>
+                            <p class="text-slate-400 text-sm">Repite y añade un reto</p>
+                        </div>
+                    </button>
+
+                    <button onclick="changeView('dilemaRey')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-purple-500/20 ripple touch-feedback">
+                        <div class="bg-purple-500/20 p-4 rounded-2xl group-hover:bg-purple-500/30 transition-colors">
+                            <span class="text-2xl">👑</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-purple-400">DILEMA DEL REY</h2>
+                            <p class="text-slate-400 text-sm">La minoría bebe</p>
+                        </div>
+                    </button>
+
+                    <button onclick="changeView('mimicaExpress')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-pink-500/20 ripple touch-feedback">
+                        <div class="bg-pink-500/20 p-4 rounded-2xl group-hover:bg-pink-500/30 transition-colors">
+                            <span class="text-2xl">🎭</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-pink-400">MÍMICA EXPRESS</h2>
+                            <p class="text-slate-400 text-sm">20 segundos para actuar</p>
+                        </div>
+                    </button>
+
+                    <!-- Biblioteca -->
+                    <button onclick="changeView('biblioteca')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-slate-700 ripple touch-feedback mt-6">
+                        <div class="bg-slate-700/50 p-4 rounded-2xl group-hover:bg-slate-700 transition-colors">
+                            <span class="text-2xl">📚</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-slate-300">BIBLIOTECA</h2>
+                            <p class="text-slate-400 text-sm">Explora todas las cartas</p>
+                        </div>
+                    </button>
+
+                </div>
+                `,
+
+            setup: () => `
+                <div class="space-y-6 animate-fade-in py-4">
+                    <div class="glass p-8 rounded-3xl card-shadow text-center">
+                        <div class="text-5xl mb-4">🃏</div>
+                        <h1 class="text-2xl font-black gradient-gold mb-2 uppercase">As Bajo La Manga</h1>
+                        <p class="text-slate-400 text-sm">Añade entre 2 y 20 jugadores para comenzar</p>
+                    </div>
+
+                    <div class="glass p-6 rounded-3xl">
+                        <div class="flex gap-2 mb-4">
+                            <input type="text" id="playerNameInput"
+                                   placeholder="Nombre del jugador"
+                                   class="flex-1 bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                   onkeypress="if(event.key==='Enter') addPlayer()" />
+                            <button onclick="addPlayer()" class="bg-gradient-to-r from-amber-500 to-orange-600 px-6 py-3 rounded-xl font-bold touch-feedback ripple">➕</button>
+                        </div>
+
+                        <div class="space-y-2 max-h-[300px] overflow-y-auto">
+                            ${(state.players || []).length === 0
+                                ? '<div class="text-center text-slate-500 py-8">Añade jugadores para comenzar</div>'
+                                : (state.players || []).map((p, i) => `
+                                <div class="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl">
+                                    <div class="flex items-center gap-3">
+                                        <span class="text-2xl">${['🔵','🟢','🟡','🔴','🟣','🟠'][i % 6]}</span>
+                                        <span class="font-bold">${p.name}</span>
+                                    </div>
+                                    <button onclick="removePlayer(${i})" class="text-red-500 hover:text-red-400 px-3 py-1 rounded-lg touch-feedback">✕</button>
+                                </div>
+                            `).join('')
+                            }
+                        </div>
+                    </div>
+
+                    <button onclick="iniciarJuego('menu')"
+                            class="w-full ${(state.players && state.players.length >= 2) ? 'bg-gradient-to-r from-green-500 to-emerald-600' : 'bg-slate-700 opacity-50 cursor-not-allowed'} p-4 rounded-2xl font-bold text-xl touch-feedback ripple"
+                            ${(state.players && state.players.length < 2) ? 'disabled' : ''}>
+                        ▶️ JUGAR (${(state.players || []).length} jugadores)
+                    </button>
+
+                    <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                        ← Volver al Menú
+                    </button>
+                </div>
+            `,
+
+            toxic: () => {
+                const categories = ['TODAS', ...new Set(TOXIC_CARDS.map(c => c.cat))];
+
+                if (state.toxicIndex === -1) {
+                    return `
+                        <div class="flex flex-col items-center justify-center min-h-[60vh] space-y-8 animate-fade-in text-center">
+                            <div class="bg-amber-500/10 w-32 h-32 rounded-full flex items-center justify-center gold-border">
+                                <span class="text-6xl">🔥</span>
+                            </div>
+                            <div class="space-y-4 w-full">
+                                <h2 class="text-3xl font-extrabold gold-text">TOXIC CARDS</h2>
+                                <div class="space-y-3">
+                                    <p class="text-xs gold-text font-bold uppercase tracking-widest">Filtrar por categoría</p>
+                                    <div class="flex flex-wrap gap-2 justify-center">
+                                        ${categories.map(cat => {
+                                            const isActive = state.toxicCategory.includes(cat);
+                                            return `
+                                            <button onclick="toggleToxicCategory('${cat}')"
+                                                    class="px-4 py-2 rounded-full font-bold text-sm border transition-all touch-feedback
+                                                           ${isActive
+                                                               ? 'bg-amber-500 border-amber-400 text-slate-950'
+                                                               : 'glass border-white/10 text-slate-400 hover:border-amber-500/40 hover:text-amber-400'}">
+                                                ${cat}
+                                            </button>
+                                        `}).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                            <button onclick="drawToxicCard()" class="w-full bg-gold text-slate-950 font-black py-4 rounded-2xl text-lg uppercase shadow-lg shadow-amber-500/20">
+                                EMPEZAR
+                            </button>
+                            <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                                ← Volver al Menú
+                            </button>
+                        </div>
+                    `;
+                }
+
+                const card = state.toxicDeck[state.toxicIndex];
+                const currentPlayer = state.players[state.currentPlayerIndex];
+
+                return `
+                <div class="space-y-8 animate-fade-in flex flex-col items-center">
+                    <div class="w-full text-center space-y-1">
+                        <span class="text-xs gold-text font-bold uppercase tracking-[0.3em]">Turno de</span>
+                        <h2 class="text-2xl font-black text-white uppercase">${currentPlayer?.name || currentPlayer}</h2>
+                    </div>
+
+                    <div class="w-full glass rounded-[2.5rem] p-8 min-h-[400px] flex flex-col items-center justify-between card-shadow card-enter relative overflow-hidden border-amber-500/40">
+                        <div class="absolute -top-10 -right-10 text-[120px] opacity-5 pointer-events-none">🔥</div>
+                        
+                        <div class="bg-amber-500/10 text-amber-500 text-[10px] font-bold tracking-[0.2em] px-4 py-1.5 rounded-full border border-amber-500/20 uppercase mb-4">
+                            ${card.cat}
+                        </div>
+
+                        <div class="flex-grow flex flex-col items-center justify-center text-center space-y-6">
+                            <h3 class="text-2xl font-bold tracking-tight text-white">${card.title}</h3>
+                            <p class="text-slate-200 text-lg leading-relaxed">${card.text}</p>
+                        </div>
+
+                        <div class="w-full pt-8 flex flex-col items-center space-y-2">
+                            <div class="text-[10px] font-bold gold-text uppercase tracking-widest">Penitencia</div>
+                            <div class="flex items-center gap-2 bg-slate-950/50 px-6 py-2.5 rounded-2xl border border-amber-500/20">
+                                <span class="text-xl">🥃</span>
+                                <span class="font-bold text-xl text-white uppercase">${card.drink}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex w-full gap-4">
+                        <button onclick="resetToxicDeck(); vibrate(100); showToast('¡Mazo mezclado!');" class="flex-1 glass p-4 rounded-2xl btn-hover text-slate-400 font-bold uppercase tracking-wider text-xs ripple touch-feedback">Mezclar</button>
+                        <button onclick="drawToxicCard()" class="flex-[2] bg-gold text-slate-950 p-4 rounded-2xl font-black btn-hover text-lg uppercase tracking-tight ripple touch-feedback">Siguiente</button>
+                    </div>
+                </div>
+                `;
+            },
+
+            poker: () => {
+                if (state.pokerIndex === -1) {
+                    return `
+                <div class="flex flex-col items-center justify-center h-[60vh] space-y-8 animate-fade-in text-center">
+                    <div class="bg-red-500/10 w-32 h-32 rounded-full flex items-center justify-center border border-red-500/20">
+                        <span class="text-6xl animate-pulse">🃏</span>
+                    </div>
+                    <div>
+                        <h2 class="text-3xl font-extrabold mb-2 text-red-500 uppercase">POKER CALIENTE</h2>
+                        <p class="text-slate-400">Cartas, azar y penitencias</p>
+                    </div>
+                    <button onclick="drawPokerCard()" class="w-full bg-red-600 hover:bg-red-500 text-white font-black py-4 rounded-2xl card-shadow btn-hover text-lg uppercase">
+                        REPARTIR
+                    </button>
+                    <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                        ← Volver al Menú
+                    </button>
+                </div>
+                `;
+                }
+
+                const card = state.pokerDeck[state.pokerIndex];
+                const isRed = ['♥️', '♦️'].includes(card.suit);
+
+                return `
+                <div class="space-y-8 animate-fade-in flex flex-col items-center">
+                    <div class="w-full glass rounded-[2.5rem] p-8 min-h-[400px] flex flex-col items-center justify-between card-shadow card-enter relative overflow-hidden border-red-500/30">
+                        <!-- Card Identity -->
+                        <div class="absolute top-8 left-8 text-4xl font-black ${isRed ? 'text-red-500' : 'text-slate-300'} flex flex-col items-center">
+                            <span>${card.rank}</span>
+                            <span class="text-3xl opacity-50">${card.suit}</span>
+                        </div>
+                        <div class="absolute bottom-8 right-8 text-4xl font-black ${isRed ? 'text-red-500' : 'text-slate-300'} flex flex-col items-center rotate-180">
+                            <span>${card.rank}</span>
+                            <span class="text-3xl opacity-50">${card.suit}</span>
+                        </div>
+
+                        <div class="flex-grow flex flex-col items-center justify-center text-center space-y-6 px-4">
+                            <h3 class="text-2xl font-bold tracking-tight text-white">${card.title}</h3>
+                            <p class="text-slate-200 text-lg leading-relaxed">${card.text}</p>
+                        </div>
+
+                        <div class="w-full pt-8 flex flex-col items-center space-y-2">
+                            <div class="text-[10px] font-bold text-red-400 uppercase tracking-widest">Penitencia</div>
+                            <div class="text-2xl font-black text-white">${card.drink}</div>
+                        </div>
+                    </div>
+
+                    <div class="flex w-full gap-4">
+                        <button onclick="resetPokerDeck(); vibrate(100); showToast('¡Baraja mezclada!');" class="flex-1 glass p-4 rounded-2xl btn-hover text-slate-400 font-bold uppercase tracking-wider text-xs ripple touch-feedback">Mezclar</button>
+                        <button onclick="drawPokerCard()" class="flex-[2] bg-red-600 text-white p-4 rounded-2xl font-black btn-hover text-lg uppercase tracking-tight shadow-lg shadow-red-500/20 ripple touch-feedback">Siguiente</button>
+                    </div>
+                </div>
+                `;
+            },
+
+            sabio: () => {
+                if (!state.sabio.current) {
+                    return `
+                <div class="flex flex-col items-center justify-center h-[60vh] space-y-8 animate-fade-in text-center">
+                    <div class="bg-blue-500/10 w-32 h-32 rounded-full flex items-center justify-center border border-blue-500/30">
+                        <span class="text-6xl animate-bounce">🧙‍♂️</span>
+                    </div>
+                    <div>
+                        <h2 class="text-3xl font-extrabold mb-2 text-blue-400 uppercase">EL SABIO</h2>
+                        <p class="text-slate-400">Adivina bajo su sabiduría</p>
+                    </div>
+                    <button onclick="initSabio()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-2xl card-shadow btn-hover text-lg uppercase tracking-widest">
+                        JUGAR
+                    </button>
+                    <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                        ← Volver al Menú
+                    </button>
+                </div>
+                `;
+                }
+
+                const card = state.sabio.current;
+                const isRed = ['♥️', '♦️'].includes(card.suit);
+                const isJefe = state.sabio.mode === 'jefe';
+
+                return `
+                <div class="space-y-6 animate-fade-in flex flex-col items-center pt-4">
+                    <!-- Mode & Drink Counter -->
+                    <div class="w-full flex items-center justify-between glass p-4 rounded-2xl border-blue-500/20">
+                        <div class="flex flex-col">
+                            <span class="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Modo</span>
+                            <button onclick="toggleSabioMode()" class="text-white font-black uppercase text-xs hover:text-blue-400 transition-colors">
+                                ${state.sabio.mode === 'jefe' ? '👨‍💻 JEFE' : '👤 PARTICIPANTE'}
+                            </button>
+                        </div>
+                        <div class="flex items-center gap-4 bg-slate-950/50 px-4 py-2 rounded-xl border border-white/5">
+                            <button onclick="updateSabioDrinks(-1)" class="text-red-500 font-black text-xl hover:scale-125 transition-transform">−</button>
+                            <div class="flex flex-col items-center">
+                                <span class="text-[8px] font-bold text-slate-500 uppercase">Tragos</span>
+                                <span class="text-xl font-black ${state.sabio.drinks >= 0 ? 'text-white' : 'text-emerald-400'}">${state.sabio.drinks}</span>
+                            </div>
+                            <button onclick="updateSabioDrinks(1)" class="text-emerald-500 font-black text-xl hover:scale-125 transition-transform">+</button>
+                        </div>
+                    </div>
+
+                    <div class="w-full relative flex justify-center py-4">
+                        <p class="absolute -top-4 text-center text-[10px] text-blue-400/50 font-bold uppercase tracking-[0.4em]">CARTA ACTUAL</p>
+                        <div class="w-48 h-72 glass rounded-[2rem] flex flex-col items-center justify-center card-shadow relative overflow-hidden border-blue-500/40">
+                             <div class="absolute -top-10 -left-10 text-8xl opacity-10 pointer-events-none text-blue-400">🧙‍♂️</div>
+                             <div class="text-6xl font-black ${isRed ? 'text-red-500' : 'text-slate-200'} flex flex-col items-center">
+                                <span>${card.rank}</span>
+                                <span class="text-4xl opacity-50">${card.suit}</span>
+                            </div>
+                        </div>
+                        
+                        ${isJefe ? `
+                            <div class="absolute -right-2 top-1/2 -translate-y-1/2 flex flex-col items-center scale-75 opacity-80">
+                                <span class="text-[8px] font-bold text-blue-400 uppercase tracking-widest mb-1">PROXIMA</span>
+                                <div class="w-20 h-32 glass rounded-xl border-dashed border-blue-500/50 flex flex-col items-center justify-center">
+                                    <span class="text-lg font-black ${['♥️', '♦️'].includes(state.sabio.next.suit) ? 'text-red-500' : 'text-white'}">${state.sabio.next.rank}</span>
+                                    <span class="text-md opacity-50">${state.sabio.next.suit}</span>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <div class="w-full space-y-4">
+                        <div class="text-center">
+                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.3em]">Sabio pregunta:</span>
+                            <h3 class="text-2xl font-black text-white uppercase">${state.sabio.questionType === 'color' ? '🎨 COLOR?' : state.sabio.questionType === 'suit' ? '🃏 PALO?' : '↔️ MAYOR O MENOR?'}</h3>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            ${state.sabio.questionType === 'color' ? `
+                                <button onclick="checkSabio('color', 'red')" class="bg-red-600/20 border border-red-500/30 p-5 rounded-2xl font-black btn-hover text-red-400 uppercase tracking-tighter shadow-lg shadow-red-500/10">❤️ ROJA</button>
+                                <button onclick="checkSabio('color', 'black')" class="bg-slate-900 border border-white/10 p-5 rounded-2xl font-black btn-hover text-white uppercase tracking-tighter shadow-lg">🖤 NEGRA</button>
+                            ` : state.sabio.questionType === 'suit' ? `
+                                <button onclick="checkSabio('suit', '♥️')" class="glass p-4 rounded-2xl text-3xl btn-hover border-red-500/20 text-red-500">♥️</button>
+                                <button onclick="checkSabio('suit', '♦️')" class="glass p-4 rounded-2xl text-3xl btn-hover border-red-500/20 text-red-500">♦️</button>
+                                <button onclick="checkSabio('suit', '♣️')" class="glass p-4 rounded-2xl text-3xl btn-hover border-slate-700 text-white">♣️</button>
+                                <button onclick="checkSabio('suit', '♠️')" class="glass p-4 rounded-2xl text-3xl btn-hover border-slate-700 text-white">♠️</button>
+                            ` : `
+                                <button onclick="checkSabio('compare', 'higher')" class="bg-blue-600/20 border border-blue-500/30 p-5 rounded-2xl font-black btn-hover text-blue-400 uppercase tracking-tighter shadow-lg shadow-blue-500/10">🔼 MAYOR</button>
+                                <button onclick="checkSabio('compare', 'lower')" class="bg-slate-900 border border-white/10 p-5 rounded-2xl font-black btn-hover text-white uppercase tracking-tighter shadow-lg">🔽 MENOR</button>
+                            `}
+                        </div>
+                    </div>
+                </div>
+
+                ${state.sabio.feedback ? `
+                        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-md animate-fade-in px-6">
+                            <div class="glass w-full max-w-xs p-10 rounded-[3.5rem] text-center space-y-8 card-shadow border-blue-500/20 relative overflow-hidden">
+                                <div class="absolute inset-0 bg-blue-500/5 pointer-events-none"></div>
+                                <div class="text-6xl">${state.sabio.feedback === 'CORRECTO' ? '✨' : '💥'}</div>
+                                <div class="space-y-1">
+                                    <h3 class="text-4xl font-black ${state.sabio.feedback === 'CORRECTO' ? 'text-emerald-400' : 'text-red-500'} italic uppercase tracking-tighter">${state.sabio.feedback}</h3>
+                                    <p class="text-slate-400 text-xs font-bold uppercase tracking-widest">${state.sabio.feedback === 'CORRECTO' ? 'Restas un trago' : 'Sumas un trago'}</p>
+                                </div>
+                                
+                                <div class="flex flex-col items-center gap-3 bg-slate-950/50 py-6 rounded-3xl border border-white/5">
+                                    <p class="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Era la carta</p>
+                                    <div class="text-5xl font-black flex items-center gap-2">
+                                        <span class="text-white">${state.sabio.next.rank}</span>
+                                        <span class="${['♥️', '♦️'].includes(state.sabio.next.suit) ? 'text-red-500' : 'text-slate-300'}">${state.sabio.next.suit}</span>
+                                    </div>
+                                </div>
+
+                                <button onclick="nextRoundSabio()" class="w-full bg-white text-slate-950 py-5 rounded-2xl font-black btn-hover uppercase tracking-widest text-lg shadow-xl">CONTINUAR</button>
+                            </div>
+                        </div>
+                    ` : ''}
+                `;
+            },
+
+            biblioteca: () => {
+                const tabs = [
+                    { id: 'toxic', label: '🔥 TOXIC' },
+                    { id: 'poker', label: '🃏 POKER' },
+                    { id: 'osecaga', label: '💩 O SE CAGA' },
+                    { id: 'quienEsMas', label: '🏆 QUIÉN' },
+                    { id: 'bomba', label: '💣 BOMBA' },
+                    { id: 'cadena', label: '⛓️ CADENA' },
+                    { id: 'dilema', label: '👑 DILEMA' },
+                    { id: 'mimica', label: '🎭 MÍMICA' },
+                    { id: 'papelera', label: '🗑️ PAPELERA' }
+                ];
+                
+                setTimeout(filterLib, 50); // Llenar lista dinámicamente preservando foco HTML
+
+                const currentTab = tabs.find(t => t.id === state.libTab) || tabs[0];
+                return `
+                <div class="space-y-6 animate-fade-in flex flex-col h-full">
+                    <!-- Tab Bar Horizontal -->
+                    <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 mask-edges" style="-ms-overflow-style: none; scrollbar-width: none;">
+                        ${tabs.map(t => `
+                            <button onclick="state.libTab = '${t.id}'; render();" class="flex-shrink-0 px-4 py-3 rounded-xl font-bold text-sm transition-all border ${state.libTab === t.id ? (t.id === 'papelera' ? 'bg-red-900 border-red-500/50 text-white shadow-lg' : 'bg-slate-800 border-white/20 text-white shadow-lg') : 'bg-transparent border-transparent text-slate-500 hover:text-slate-400'}">
+                                ${t.label}
+                            </button>
+                        `).join('')}
+                    </div>
+
+                    ${state.libTab !== 'papelera' ? `
+                    <div class="relative">
+                        <input type="text" id="lib-search" oninput="filterLib()" placeholder="Buscar en ${currentTab.label}..." class="w-full glass p-4 rounded-2xl border-white/10 focus:outline-none focus:border-gold/50 transition-colors pl-12 italic text-sm">
+                        <span class="absolute left-4 top-1/2 -translate-y-1/2 opacity-30">🔍</span>
+                    </div>
+                    ` : `
+                    <div class="glass p-4 rounded-2xl text-center border-red-500/20 bg-red-500/5">
+                        <p class="text-red-400 font-bold text-sm uppercase tracking-widest mb-1">🗑️ Elementos Ocultos</p>
+                        <p class="text-slate-400 text-xs">Lo que envíes aquí no aparecerá en ninguna de tus partidas futuras.</p>
+                    </div>
+                    `}
+
+                    <div id="lib-results" class="flex flex-col gap-3">
+                        <div class="text-center text-slate-500 py-12 animate-pulse">Cargando...</div>
+                    </div>
+                    
+                    <div id="lib-count" class="text-center py-4 pb-8 text-slate-600 text-xs font-bold uppercase tracking-widest opacity-30">
+                        Total: 0
+                    </div>
+                </div>
+                `;
+            },
+
+            // ========================================
+            // JUEGOS NUEVOS - VISTAS
+            // ========================================
+
+            quienEsMas: () => {
+                const question = state.quienEsMas?.currentQuestion || "Presiona NUEVA PREGUNTA para empezar";
+
+                return `
+                    <div class="space-y-6 animate-fade-in">
+                        <div class="glass p-8 rounded-3xl card-shadow text-center">
+                            <div class="text-4xl mb-4">🏆</div>
+                            <h2 class="text-2xl font-bold gradient-gold mb-2">¿QUIÉN ES MÁS...?</h2>
+                            <p class="text-slate-400 text-sm">A la cuenta de 3, señalen al más probable</p>
+                        </div>
+                        
+                        <div class="glass p-8 rounded-3xl card-shadow min-h-[200px] flex items-center justify-center">
+                            <p class="text-xl font-bold text-center text-white leading-relaxed px-4">
+                                ${question}
+                            </p>
+                        </div>
+                        
+                        <button onclick="nuevaPreguntaQuienEsMas()" class="w-full bg-gradient-to-r from-amber-500 to-orange-600 p-4 rounded-2xl font-bold text-lg touch-feedback ripple">
+                            🎲 NUEVA PREGUNTA
+                        </button>
+                        
+                        <div class="glass p-4 rounded-2xl text-center">
+                            <p class="text-slate-400 text-sm mb-2">Instrucciones:</p>
+                            <p class="text-white font-bold">El que reciba más votos BEBE 🍺</p>
+                        </div>
+                        
+                        <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                            ← Volver al Menú
+                        </button>
+                    </div>
+                `;
+            },
+
+            bomba: () => {
+                const categoria = state.bomba?.currentCategory || "Presiona INICIAR BOMBA";
+                const isActive = state.bomba?.isActive || false;
+
+                return `
+                    <div class="space-y-6 animate-fade-in">
+                        <div class="glass p-8 rounded-3xl card-shadow text-center">
+                            <div class="text-4xl mb-4">💣</div>
+                            <h2 class="text-2xl font-bold text-red-500 mb-2">BOMBA DE PALABRAS</h2>
+                            <p class="text-slate-400 text-sm">Di palabras de la categoría antes que explote</p>
+                        </div>
+                        
+                        <div class="glass p-8 rounded-3xl card-shadow min-h-[200px] flex flex-col items-center justify-center">
+                            <p class="text-sm text-slate-400 mb-2 uppercase tracking-wider">Categoría:</p>
+                            <p class="text-2xl font-bold text-center text-white mb-4 px-4">
+                                ${categoria}
+                            </p>
+                            ${isActive ? '<div class="text-red-500 animate-pulse text-lg font-bold">⏱️ ¡ESTÁ CORRIENDO!</div>' : ''}
+                        </div>
+                        
+                        <button onclick="${isActive ? 'detonarBomba()' : 'iniciarBomba()'}" 
+                                class="w-full ${isActive ? 'bg-red-600 animate-pulse' : 'bg-gradient-to-r from-orange-500 to-red-600'} p-4 rounded-2xl font-bold text-lg touch-feedback ripple">
+                            ${isActive ? '💥 ¡EXPLOTÓ!' : '🎮 INICIAR BOMBA'}
+                        </button>
+                        
+                        <div class="glass p-4 rounded-2xl text-center">
+                            <div class="text-sm text-slate-400 mb-2">Instrucciones:</div>
+                            <p class="text-white font-bold">Pásense el celular o turno rápido. El que tenga el turno cuando explote BEBE.</p>
+                        </div>
+                        
+                        <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                            ← Volver al Menú
+                        </button>
+                    </div>
+                `;
+            },
+
+            retoCadena: () => {
+                const chain = state.retoCadena?.currentChain || [];
+
+                return `
+                    <div class="space-y-6 animate-fade-in">
+                        <div class="glass p-8 rounded-3xl card-shadow text-center">
+                            <div class="text-4xl mb-4">⛓️</div>
+                            <h2 class="text-2xl font-bold text-blue-400 mb-2">RETO EN CADENA</h2>
+                            <p class="text-slate-400 text-sm">Repite todos los retos y añade uno nuevo</p>
+                        </div>
+                        
+                        <div class="glass p-6 rounded-3xl">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="font-bold text-slate-400 text-sm uppercase">Cadena Actual</h3>
+                                <span class="bg-blue-500/20 px-3 py-1 rounded-full text-sm font-bold text-blue-400">
+                                    ${chain.length} retos
+                                </span>
+                            </div>
+                            <div class="space-y-2 max-h-[300px] overflow-y-auto">
+                                ${chain.length > 0 ? chain.map((reto, i) => `
+                                    <div class="flex items-start gap-3 p-3 bg-slate-800/50 rounded-xl">
+                                        <span class="font-bold text-blue-400 text-sm">${i + 1}.</span>
+                                        <span class="text-sm">${reto}</span>
+                                    </div>
+                                `).join('') : `
+                                    <div class="text-center text-slate-500 py-8 text-sm">
+                                        Presiona "AÑADIR RETO" para empezar
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-3">
+                            <button onclick="anadirReto()" class="bg-gradient-to-r from-blue-500 to-purple-600 p-4 rounded-2xl font-bold touch-feedback ripple">
+                                ➕ AÑADIR RETO
+                            </button>
+                            <button onclick="falloReto()" class="bg-red-600 p-4 rounded-2xl font-bold touch-feedback ripple">
+                                ❌ FALLÓ
+                            </button>
+                        </div>
+                        
+                        <button onclick="reiniciarRetoCadena()" class="w-full glass p-3 rounded-2xl font-bold text-slate-400 text-sm touch-feedback">
+                            🔄 Reiniciar Cadena
+                        </button>
+                        
+                        <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                            ← Volver al Menú
+                        </button>
+                    </div>
+                `;
+            },
+
+            dilemaRey: () => {
+                const dilema = state.dilemaRey?.currentDilema || { a: "Presiona", b: "NUEVO DILEMA" };
+                const votesA = state.dilemaRey?.votesA || 0;
+                const votesB = state.dilemaRey?.votesB || 0;
+                const total = votesA + votesB;
+
+                return `
+                    <div class="space-y-6 animate-fade-in">
+                        <div class="glass p-8 rounded-3xl card-shadow text-center">
+                            <div class="text-4xl mb-4">👑</div>
+                            <h2 class="text-2xl font-bold gradient-gold mb-2">DILEMA DEL REY</h2>
+                            <p class="text-slate-400 text-sm">La minoría bebe</p>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <button onclick="votarDilema('a')" class="glass p-6 rounded-3xl btn-hover touch-feedback min-h-[150px] flex flex-col justify-between">
+                                <div>
+                                    <div class="text-3xl mb-2 font-bold text-amber-400">A</div>
+                                    <p class="text-sm leading-relaxed">${dilema.a}</p>
+                                </div>
+                                ${total > 0 ? `<div class="text-xl font-bold text-amber-500 mt-4">${votesA} votos</div>` : ''}
+                            </button>
+                            <button onclick="votarDilema('b')" class="glass p-6 rounded-3xl btn-hover touch-feedback min-h-[150px] flex flex-col justify-between">
+                                <div>
+                                    <div class="text-3xl mb-2 font-bold text-blue-400">B</div>
+                                    <p class="text-sm leading-relaxed">${dilema.b}</p>
+                                </div>
+                                ${total > 0 ? `<div class="text-xl font-bold text-blue-500 mt-4">${votesB} votos</div>` : ''}
+                            </button>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-3">
+                            <button onclick="nuevoDilema()" class="bg-gradient-to-r from-amber-500 to-orange-600 p-4 rounded-2xl font-bold touch-feedback ripple">
+                                🎲 NUEVO DILEMA
+                            </button>
+                            <button onclick="aplicarDilema()" class="bg-green-600 p-4 rounded-2xl font-bold touch-feedback ripple">
+                                ✅ APLICAR
+                            </button>
+                        </div>
+                        
+                        <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                            ← Volver al Menú
+                        </button>
+                    </div>
+                `;
+            },
+
+            mimicaExpress: () => {
+                const word = state.mimicaExpress?.currentWord || "Presiona INICIAR para empezar";
+                const timeLeft = state.mimicaExpress?.timeLeft || 20;
+                const isActive = !!(state.mimicaExpress?.timerInterval);
+
+                return `
+                    <div class="space-y-6 animate-fade-in">
+                        <div class="glass p-8 rounded-3xl card-shadow text-center">
+                            <div class="text-4xl mb-4">🎭</div>
+                            <h2 class="text-2xl font-bold text-purple-400 mb-2">MÍMICA EXPRESS</h2>
+                            <p class="text-slate-400 text-sm">20 segundos para actuar</p>
+                        </div>
+                        
+                        <div class="glass p-8 rounded-3xl card-shadow min-h-[180px] flex flex-col items-center justify-center">
+                            <p class="text-2xl font-bold text-center mb-4 px-4">${word}</p>
+                            ${isActive ? `
+                                <div class="text-5xl font-black text-amber-500">${timeLeft}</div>
+                                <div class="w-full h-2 bg-slate-700 rounded-full mt-4 overflow-hidden">
+                                    <div class="h-full bg-amber-500 transition-all duration-1000" style="width: ${(timeLeft / 20) * 100}%"></div>
+                                </div>
+                            ` : ''}
+                        </div>
+                        
+                        <button onclick="${isActive ? 'detenerMimica()' : 'iniciarMimica()'}" 
+                                class="w-full bg-gradient-to-r from-purple-500 to-pink-600 p-4 rounded-2xl font-bold text-lg touch-feedback ripple">
+                            ${isActive ? '⏹️ DETENER' : '▶️ INICIAR MÍMICA'}
+                        </button>
+                        
+                        <div class="grid grid-cols-2 gap-3">
+                            <button onclick="resultadoMimica(true)" class="bg-green-600 p-3 rounded-xl font-bold text-sm touch-feedback">
+                                ✅ Adivinaron
+                            </button>
+                            <button onclick="resultadoMimica(false)" class="bg-red-600 p-3 rounded-xl font-bold text-sm touch-feedback">
+                                ❌ Fallaron
+                            </button>
+                        </div>
+                        
+                        <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                            ← Volver al Menú
+                        </button>
+                    </div>
+                `;
+            },
+            
+            osecaga: () => {
+                const categories = [
+                    { val: 'all', label: 'Todas las Cartas' },
+                    { val: 'reto', label: 'Solo Retos' },
+                    { val: 'flash', label: 'Solo Flash' },
+                    { val: 'juego', label: 'Solo Juegos' },
+                    { val: 'regla', label: 'Solo Reglas' },
+                    { val: 'suerte', label: 'Solo Suerte' }
+                ];
+
+                // Parche de seguridad para datos viejos en localStorage
+                if (!state.osecaga.categories || !Array.isArray(state.osecaga.categories)) {
+                    state.osecaga.categories = ['all'];
+                }
+
+                if (state.osecaga.index === -1 || !state.osecaga.deck[state.osecaga.index]) {
+                    return `
+                        <div class="flex flex-col items-center justify-center min-h-[60vh] space-y-8 animate-fade-in text-center">
+                            <div class="bg-emerald-500/10 w-32 h-32 rounded-full flex items-center justify-center border border-emerald-500/20">
+                                <span class="text-6xl">💩</span>
+                            </div>
+                            <div class="space-y-5 w-full">
+                                <h2 class="text-3xl font-extrabold text-emerald-400 uppercase">O SE CAGA</h2>
+                                <div class="space-y-3">
+                                    <p class="text-xs text-emerald-400/80 font-bold uppercase tracking-widest">Filtrar Categoría</p>
+                                    <div class="flex flex-wrap gap-2 justify-center">
+                                        ${categories.map(cat => {
+                                            const isActive = state.osecaga.categories.includes(cat.val);
+                                            return `
+                                            <button onclick="toggleOSeCagaCategory('${cat.val}')"
+                                                    class="px-4 py-2 rounded-full font-bold text-sm border transition-all touch-feedback
+                                                           ${isActive
+                                                               ? 'bg-emerald-500 border-emerald-400 text-slate-950'
+                                                               : 'glass border-white/10 text-slate-400 hover:border-emerald-500/40 hover:text-amber-400'}">
+                                                ${cat.label}
+                                            </button>
+                                        `}).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                            <button onclick="startOSeCaga()" class="w-full bg-emerald-600 text-white font-black py-4 rounded-2xl text-lg uppercase shadow-lg shadow-emerald-500/20 ripple touch-feedback">
+                                EMPEZAR EL JUEGO
+                            </button>
+                            <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                                ← Volver al Menú
+                            </button>
+                        </div>
+                    `;
+                }
+
+                const cardImg = state.osecaga.deck[state.osecaga.index];
+                const currentPlayer = state.players[state.currentPlayerIndex];
+                const totalCards = state.osecaga.deck.length;
+                const currentNumber = state.osecaga.index + 1;
+
+                // Extraer número de carta del nombre del archivo
+                const cardNum = parseInt(cardImg.match(/_(\d+)\.jpg$/)?.[1]) || currentNumber;
+
+                // Configuración visual por categoría
+                const catType = OSECAGA_DATA[cardImg];
+                const catConfig = {
+                    reto:   { border: 'border-emerald-500/60', bg: 'bg-emerald-500/10', text: 'text-emerald-400', label: 'RETO',  emoji: '🎯', glow: 'shadow-emerald-500/20' },
+                    flash:  { border: 'border-yellow-400/60',  bg: 'bg-yellow-400/10',  text: 'text-yellow-300',  label: 'FLASH', emoji: '⚡', glow: 'shadow-yellow-400/20'  },
+                    juego:  { border: 'border-purple-500/60',  bg: 'bg-purple-500/10',  text: 'text-purple-400',  label: 'JUEGO', emoji: '🎮', glow: 'shadow-purple-500/20'  },
+                    regla:  { border: 'border-blue-500/60',    bg: 'bg-blue-500/10',    text: 'text-blue-400',    label: 'REGLA', emoji: '📏', glow: 'shadow-blue-500/20'    },
+                    suerte: { border: 'border-amber-500/60',   bg: 'bg-amber-500/10',   text: 'text-amber-400',   label: 'SUERTE',emoji: '🍀', glow: 'shadow-amber-500/20'   }
+                };
+                const cat = catConfig[catType] || catConfig.reto;
+
+                return `
+                <div class="space-y-6 animate-fade-in flex flex-col items-center w-full">
+                    <div class="w-full text-center space-y-1">
+                        <span class="text-xs text-emerald-400/80 font-bold uppercase tracking-[0.3em]">Turno de</span>
+                        <h2 class="text-2xl font-black text-white uppercase">${currentPlayer?.name || currentPlayer}</h2>
+                    </div>
+
+                    <div class="w-full relative flex justify-center">
+                        <div class="w-full aspect-[2/3] rounded-[2rem] card-shadow relative overflow-hidden ${cat.border} border-2 ${state.osecaga.animationClass}">
+                            
+                            <!-- Imagen principal con el contenido del reto -->
+                            <img src="${cardImg}"
+                                 class="w-full h-full object-cover pointer-events-none"
+                                 alt="Carta ${cardNum} - ${cat.label}"
+                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+
+                            <!-- Fallback si la imagen no carga -->
+                            <div style="display:none" class="absolute inset-0 ${cat.bg} flex flex-col items-center justify-center gap-4">
+                                <span class="text-[5rem] font-black ${cat.text} leading-none">${cardNum}</span>
+                                <div class="px-6 py-2 rounded-full ${cat.bg} border ${cat.border} flex items-center gap-2">
+                                    <span class="text-lg">${cat.emoji}</span>
+                                    <span class="font-black text-sm uppercase tracking-[0.2em] ${cat.text}">${cat.label}</span>
+                                </div>
+                            </div>
+
+                            <!-- Overlay superior: categoría + número de carta -->
+                            <div class="absolute top-0 left-0 right-0 flex items-center justify-between px-4 pt-3 pb-6"
+                                 style="background: linear-gradient(to bottom, rgba(2,6,23,0.85) 0%, transparent 100%);">
+                                <div class="flex items-center gap-2 ${cat.bg} border ${cat.border} px-3 py-1 rounded-full">
+                                    <span class="text-sm">${cat.emoji}</span>
+                                    <span class="text-xs font-black uppercase tracking-wider ${cat.text}">${cat.label}</span>
+                                </div>
+                                <span class="text-xs font-bold text-slate-400 bg-slate-900/80 border border-white/10 rounded-full px-3 py-1">
+                                    #${cardNum}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex w-full gap-3 mt-2">
+                        <button onclick="mostrarInstruccionesOSeCaga()" class="flex-[1] glass p-4 rounded-2xl btn-hover text-slate-300 font-bold tracking-tight ripple touch-feedback border-white/10 text-sm">Instrucciones</button>
+                        <button onclick="drawOSeCagaCard()" class="flex-[2] bg-emerald-600 text-white p-4 rounded-2xl font-black btn-hover text-lg uppercase shadow-lg shadow-emerald-500/20 ripple touch-feedback">SIGUIENTE ➡️</button>
+                    </div>
+                </div>
+                `;
+            }
+        };
+
+        function iniciarJuego(view = 'menu') {
+            state.gameStarted = true;
+            changeView(view);
+        }
+
+        function changeView(view) {
+            console.log("Changing view to:", view);
+            try {
+                // Limpieza al salir de juegos específicos
+                if (state.view === 'osecaga' && view !== 'osecaga') {
+                    resetOSeCagaDeck();
+                }
+                
+                state.view = view;
+                saveState();
+                render();
+                window.scrollTo(0, 0);
+            } catch (e) {
+                console.error("Error in changeView:", e);
+            }
+        }
+
+        // El listener de back-btn ahora está inline en el HTML para máxima compatibilidad
+
+        function startToxicGame() {
+            resetToxicDeck();
+            state.toxicIndex = 0;
+            state.currentPlayerIndex = 0;
+            saveState();
+            render();
+        }
+
+        function startOSeCaga() {
+            console.log("Starting O Se Caga...");
+            // Usamos la función centralizada de reset que ya maneja las múltiples categorías
+            resetOSeCagaDeck();
+            
+            // Si después de filtrar no hay cartas, mostrar aviso
+            if (state.osecaga.deck.length === 0) {
+                showToast("⚠️ No hay cartas para esta selección");
+                return;
+            }
+
+            state.osecaga.index = 0;
+            state.currentPlayerIndex = 0;
+            state.osecaga.animationClass = 'card-enter';
+            saveState();
+            render();
+        }
+
+        // toggleOSeCagaCategory ya maneja los cambios de categoría de forma múltiple
+
+        function drawOSeCagaCard() {
+            if (state.osecaga.index >= state.osecaga.deck.length - 1) {
+                // Fin del mazo: Rebarajar
+                state.osecaga.deck = shuffleArray([...state.osecaga.deck]);
+                state.osecaga.index = 0;
+                showToast('🔄 Se acabó el mazo, barajando...');
+            } else {
+                state.osecaga.index++;
+            }
+            state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
+            state.osecaga.animationClass = 'slide-in-right';
+            saveState();
+            render();
+        }
+
+        function mostrarInstruccionesOSeCaga() {
+            const instImg = './O SE CAGA/Instrucciones.jpg';
+            const modalHtml = `
+                <div id="osecaga-modal" class="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-950/95 backdrop-blur animate-fade-in p-6" onclick="this.remove()">
+                    <div class="glass w-full max-w-md p-2 rounded-[2rem] border-emerald-500/40 relative overflow-hidden flex flex-col">
+                        <img src="${instImg}" class="w-full rounded-2xl mb-4" alt="Instrucciones O Se Caga" onerror="this.onerror=null; this.src=''; this.alt='Instrucciones no encontradas';">
+                        <div class="px-4 pb-4 text-emerald-100 text-sm">
+                            <p class="mb-2"><strong class="text-emerald-400">FLASH:</strong> Toman todos los que son más pequeños que usted.</p>
+                            <p><strong class="text-emerald-400">JUEGO:</strong> Últim@ en pie. Todos toman shots al mismo tiempo. El que gane asigna retos.</p>
+                        </div>
+                        <button class="bg-white text-slate-900 font-bold py-3 mx-4 mb-4 rounded-xl shadow-lg uppercase tracking-wider text-sm">Cerrar</button>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+        }
+
+        function toggleOSeCagaCategory(cat) {
+            if (!state.osecaga.categories) state.osecaga.categories = ['all'];
+            
+            if (cat === 'all') {
+                state.osecaga.categories = ['all'];
+            } else {
+                state.osecaga.categories = state.osecaga.categories.filter(c => c !== 'all');
+                if (state.osecaga.categories.includes(cat)) {
+                    state.osecaga.categories = state.osecaga.categories.filter(c => c !== cat);
+                    if (state.osecaga.categories.length === 0) state.osecaga.categories = ['all'];
+                } else {
+                    state.osecaga.categories.push(cat);
+                }
+            }
+            saveState();
+            render();
+        }
+
+        function drawToxicCard() {
+            let filteredDeck = TOXIC_CARDS;
+            if (state.toxicCategory !== 'TODAS') {
+                filteredDeck = TOXIC_CARDS.filter(c => c.cat === state.toxicCategory);
+            }
+
+            state.toxicIndex++;
+            if (state.toxicIndex >= filteredDeck.length) {
+                state.toxicDeck = shuffleArray([...filteredDeck]);
+                state.toxicIndex = 0;
+                showToast('🔄 Se barajó el mazo nuevamente');
+            } else if (state.toxicIndex === 0) {
+                state.toxicDeck = shuffleArray([...filteredDeck]);
+            }
+
+            state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
+            saveState();
+            render();
+        }
+
+        function toggleSabioMode() {
+            state.sabio.mode = state.sabio.mode === 'jefe' ? 'participante' : 'jefe';
+            saveState();
+            render();
+        }
+
+        function updateSabioDrinks(val) {
+            state.sabio.drinks += val;
+            saveState();
+            render();
+        }
+
+        function drawPokerCard() {
+            state.pokerIndex++;
+            if (state.pokerIndex >= state.pokerDeck.length || state.pokerIndex === -1) {
+                state.pokerDeck = shuffleArray([...POKER_CARDS]);
+                state.pokerIndex = 0;
+                showToast('🔄 Se barajó el mazo nuevamente');
+            }
+            saveState();
+            render();
+        }
+
+        function initSabio() {
+            state.sabio.current = getRandomCard();
+            state.sabio.next = getRandomCard();
+            state.sabio.feedback = null;
+            state.sabio.drinks = 0;
+            state.sabio.questionType = ['color', 'suit', 'compare'][Math.floor(Math.random() * 3)];
+            saveState();
+            render();
+        }
+
+        function checkSabio(type, value) {
+            let correct = false;
+            const next = state.sabio.next;
+            const current = state.sabio.current;
+
+            if (type === 'color') {
+                const isRed = ['♥️', '♦️'].includes(next.suit);
+                correct = (value === 'red' && isRed) || (value === 'black' && !isRed);
+            } else if (type === 'suit') {
+                correct = next.suit === value;
+            } else if (type === 'compare') {
+                const ranks = ['As', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+                const nextVal = ranks.indexOf(next.rank);
+                const currVal = ranks.indexOf(current.rank);
+                if (value === 'higher') correct = nextVal > currVal;
+                else correct = nextVal < currVal;
+            }
+
+            state.sabio.feedback = correct ? 'CORRECTO' : 'INCORRECTO';
+            if (correct) {
+                state.sabio.drinks--;
+                vibrate([50, 50, 50]); // Triple vibration for success
+                // If drinks became zero or negative, show confetti celebration
+                if (state.sabio.drinks <= 0) {
+                    setTimeout(createConfetti, 300);
+                }
+            } else {
+                state.sabio.drinks++;
+                vibrate(200); // Long vibration for wrong answer
+            }
+
+            saveState();
+            render();
+        }
+
+        function nextRoundSabio() {
+            state.sabio.current = state.sabio.next;
+            state.sabio.next = getRandomCard();
+            state.sabio.feedback = null;
+            state.sabio.questionType = ['color', 'suit', 'compare'][Math.floor(Math.random() * 3)];
+            saveState();
+            render();
+        }
+
+        function filterLib() {
+            const resultsContainer = document.getElementById('lib-results');
+            const countContainer = document.getElementById('lib-count');
+            if (!resultsContainer) return;
+            
+            const searchInput = document.getElementById('lib-search');
+            const query = searchInput ? searchInput.value.toLowerCase() : '';
+            
+            const trashArray = (juego) => state.trash && state.trash[juego] ? state.trash[juego] : [];
+            let allCardsHtml = '';
+            let totalItems = 0;
+
+            if (state.libTab === 'papelera') {
+                let trashItems = [];
+                const types = ['toxic', 'poker', 'osecaga', 'quienEsMas', 'bomba', 'cadena', 'dilema', 'mimica'];
+                types.forEach(t => {
+                    trashArray(t).forEach(id => { trashItems.push({ type: t, id: id }); });
+                });
+                
+                totalItems = trashItems.length;
+
+                if (trashItems.length === 0) {
+                    allCardsHtml = `<div class="text-center text-slate-500 py-12">La papelera está vacía</div>`;
+                } else {
+                    allCardsHtml = trashItems.map(item => {
+                        let label = item.type + " - " + item.id;
+                        if (item.type === 'toxic') {
+                            const c = TOXIC_CARDS.find(x => String(x.id) === item.id);
+                            if (c) label = `🔥 ${c.title}`;
+                        } else if (item.type === 'poker') {
+                            const c = POKER_CARDS.find(x => String(x.id) === item.id);
+                            if (c) label = `🃏 ${c.title}`;
+                        } else if (item.type === 'dilema') {
+                            label = `👑 Dilema: ${item.id.split('|')[0]}...`;
+                        } else if (item.type === 'osecaga') {
+                            label = `💩 Carta: ${item.id.split('/').pop().replace('.jpg','')}`;
+                        } else {
+                            label = `[${item.type}] ${item.id.substring(0, 40)}`;
+                        }
+                        return `
+                            <div class="glass p-4 rounded-xl flex justify-between items-center bg-red-950/20 border-red-500/20 group animate-fade-in">
+                                <span class="text-sm font-bold text-slate-300 truncate pr-4">${label}</span>
+                                <button onclick="restaurarDePapelera('${item.type}', '${item.id.replace(/'/g, "\\'")}')" class="bg-emerald-600/20 text-emerald-400 px-3 py-2 rounded-lg font-bold text-xs hover:bg-emerald-600/40 touch-feedback ripple border border-emerald-500/30 shrink-0">♻️ Restaurar</button>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            } else {
+                let items = [];
+                if (state.libTab === 'toxic') items = TOXIC_CARDS.filter(c => !trashArray('toxic').includes(String(c.id))).map(c => ({ id: c.id, label: `[${c.cat}] ${c.title} - ${c.text}`, obj: c }));
+                else if (state.libTab === 'poker') items = POKER_CARDS.filter(c => !trashArray('poker').includes(String(c.id))).map(c => ({ id: c.id, label: `[${c.category}] ${c.title} - ${c.text}`, obj: c }));
+                else if (state.libTab === 'osecaga') items = OSECAGA_ALL_CARDS.filter(c => !trashArray('osecaga').includes(c)).map(c => ({ id: c, label: c, isImg: true }));
+                else if (state.libTab === 'quienEsMas') items = QUIEN_ES_MAS.filter(c => !trashArray('quienEsMas').includes(c)).map(c => ({ id: c, label: c }));
+                else if (state.libTab === 'bomba') items = CATEGORIAS_BOMBA.filter(c => !trashArray('bomba').includes(c)).map(c => ({ id: c, label: c }));
+                else if (state.libTab === 'cadena') items = MICRO_RETOS.filter(c => !trashArray('cadena').includes(c)).map(c => ({ id: c, label: c }));
+                else if (state.libTab === 'dilema') items = DILEMAS_REY.filter(c => !trashArray('dilema').includes(c.a + "|" + c.b)).map(c => ({ id: c.a + "|" + c.b, label: `A: ${c.a} // B: ${c.b}` }));
+                else if (state.libTab === 'mimica') items = PALABRAS_MIMICA.filter(c => !trashArray('mimica').includes(c)).map(c => ({ id: c, label: c }));
+
+                // Filter explicitly by search query
+                if (query) items = items.filter(i => i.label.toLowerCase().includes(query));
+
+                totalItems = items.length;
+                const visibleItems = items.slice(0, 100);
+
+                if (visibleItems.length === 0) {
+                    allCardsHtml = `<div class="text-center text-slate-500 py-12">No hay elementos</div>`;
+                } else {
+                    allCardsHtml = visibleItems.map(item => {
+                        if (state.libTab === 'toxic' || state.libTab === 'poker') {
+                            const card = item.obj;
+                            return `
+                                <div class="glass p-6 rounded-[2.5rem] border-white/5 space-y-4 relative overflow-hidden group">
+                                    <button onclick="moverAPapelera('${state.libTab}', '${String(item.id).replace(/'/g, "\\'")}')" class="absolute top-4 right-4 text-slate-400 bg-white/5 hover:bg-red-500/20 hover:text-red-500 w-10 h-10 rounded-full flex items-center justify-center font-bold z-10 transition-all shadow-md">✕</button>
+                                    <div class="absolute -right-4 -top-4 text-4xl opacity-[0.03] rotate-12">${state.libTab === 'toxic' ? '🔥' : '🃏'}</div>
+                                    <div class="flex justify-between items-start pr-12">
+                                        <span class="text-[9px] font-black ${state.libTab === 'toxic' ? 'gold-text' : 'text-red-500'} tracking-[0.2em] uppercase border ${state.libTab === 'toxic' ? 'border-amber-500/20 bg-amber-500/5' : 'border-red-500/20 bg-red-500/5'} px-3 py-1 rounded-full">${card.cat || card.category}</span>
+                                        <div class="flex items-center gap-1.5 bg-slate-950/50 px-3 py-1 rounded-xl border border-white/5">
+                                            <span class="text-[10px]">🥃</span>
+                                            <span class="text-[10px] font-black text-white uppercase">${card.drink}</span>
+                                        </div>
+                                    </div>
+                                    <div class="pr-6">
+                                        <h4 class="font-bold text-white text-lg tracking-tight mb-1">${card.title}</h4>
+                                        <p class="text-slate-400 text-sm leading-relaxed">${card.text}</p>
+                                    </div>
+                                </div>
+                            `;
+                        } else if (item.isImg) {
+                            return `
+                                <div class="glass p-2 rounded-2xl relative flex gap-4 pr-16 items-center">
+                                    <div class="w-16 h-24 bg-slate-900 rounded-lg overflow-hidden flex-shrink-0">
+                                        <img src="${item.id}" class="w-full h-full object-cover mix-blend-screen" loading="lazy" />
+                                    </div>
+                                    <span class="text-sm font-bold text-slate-300 truncate">${item.id.split('/').pop().replace('.jpg','')}</span>
+                                    <button onclick="moverAPapelera('${state.libTab}', '${item.id.replace(/'/g, "\\'")}')" class="absolute top-1/2 -translate-y-1/2 right-4 text-slate-400 bg-white/5 hover:bg-red-500/20 hover:text-red-500 w-10 h-10 rounded-full flex items-center justify-center font-bold z-10 transition-all shadow-md">✕</button>
+                                </div>
+                            `;
+                        } else {
+                            return `
+                                <div class="glass p-4 rounded-xl relative pr-16 items-center flex min-h-[4rem]">
+                                    <span class="text-sm text-slate-300 font-bold">${item.label.replace('|', ' 🆚 ')}</span>
+                                    <button onclick="moverAPapelera('${state.libTab}', '${item.id.replace(/'/g, "\\'")}')" class="absolute top-1/2 -translate-y-1/2 right-4 text-slate-400 bg-white/5 hover:bg-red-500/20 hover:text-red-500 w-10 h-10 rounded-full flex items-center justify-center font-bold z-10 transition-all shadow-md">✕</button>
+                                </div>
+                            `;
+                        }
+                    }).join('');
+                }
+            }
+            
+            resultsContainer.innerHTML = allCardsHtml;
+            if (countContainer) {
+                const suffix = totalItems > 100 ? ' (Mostrando 100)' : '';
+                countContainer.innerText = 'Total: ' + totalItems + ' elementos' + suffix;
+            }
+        }
+
+        function render() {
+            const container = document.getElementById('game-container');
+            const headerTitle = document.getElementById('header-title');
+            const backBtn = document.getElementById('back-btn');
+
+            if (state.view === 'menu') {
+                headerTitle.innerText = "As Bajo La Manga";
+                backBtn.classList.add('hidden');
+            } else {
+                // Formateo especial para O Se Caga
+                const title = state.view === 'osecaga' ? 'O SE CAGA' : state.view.toUpperCase().replace('_', ' ');
+                headerTitle.innerText = title;
+                backBtn.classList.remove('hidden');
+            }
+
+            if (views[state.view]) {
+                container.innerHTML = views[state.view]();
+            }
+
+            // Add card flip animation on render
+            const cardElements = container.querySelectorAll('.glass.rounded-\\[2\\.5rem\\]');
+            cardElements.forEach(el => {
+                if (state.view !== 'menu' && state.view !== 'biblioteca') {
+                    addCardFlipAnimation(el);
+                }
+            });
+        }
+
+        // Initialize touch event listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            const gameContainer = document.getElementById('game-container');
+            if (gameContainer) {
+                gameContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
+                gameContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
+            }
+
+            // Service Worker removido (sw.js eliminado)
+        });
+
+        // Initial render
+        render();
+
+        // ========================================
+        // GESTIÓN DE JUGADORES
+        // ========================================
+
+        function addPlayer() {
+            const input = document.getElementById('playerNameInput');
+            const name = input?.value.trim();
+            if (!name) return showToast('✍️ Escribe un nombre');
+
+            if (!state.players) state.players = [];
+            if (state.players.length >= 20) return showToast('⚠️ Máximo 20 jugadores');
+            if (state.players.some(p => p.name === name)) return showToast('❌ Ya existe ese nombre');
+
+            state.players.push({ name });
+            input.value = '';
+            vibrate(30);
+            render();
+        }
+
+        function removePlayer(index) {
+            state.players.splice(index, 1);
+            vibrate(50);
+            render();
+        }
+
+        function iniciarJuego(gameName) {
+            if (state.players.length < 2) return showToast('⚠️ Mínimo 2 jugadores');
+            state.gameStarted = true;
+            state.currentPlayerIndex = 0;
+            vibrate([50, 100]);
+            // Si viene del setup global, ir al menú; si viene de un juego, ir al juego
+            changeView(gameName || 'menu');
+        }
+
+        // ========================================
+        // ¿QUIÉN ES MÁS?
+        // ========================================
+
+        function nuevaPreguntaQuienEsMas() {
+            if (!state.quienEsMas) state.quienEsMas = { usedQuestions: [] };
+
+            // Si ya usamos todas, reiniciar
+            const available = QUIEN_ES_MAS.filter((_, i) => !state.quienEsMas.usedQuestions.includes(i) && !state.trash.quienEsMas.includes(QUIEN_ES_MAS[i]));
+            if (available.length === 0) {
+                state.quienEsMas.usedQuestions = [];
+                showToast('🔄 Preguntas reiniciadas');
+            }
+
+            const availableQuestions = QUIEN_ES_MAS.filter((_, i) => !state.quienEsMas.usedQuestions.includes(i) && !state.trash.quienEsMas.includes(QUIEN_ES_MAS[i]));
+            const randomIndex = Math.floor(Math.random() * availableQuestions.length);
+            const question = availableQuestions[randomIndex];
+            const originalIndex = QUIEN_ES_MAS.indexOf(question);
+
+            state.quienEsMas.currentQuestion = question;
+            state.quienEsMas.usedQuestions.push(originalIndex);
+
+            vibrate(30);
+            saveState();
+            render();
+        }
+
+        function seleccionarGanadorQuien(playerName) {
+            showToast(`🍺 ${playerName} bebe 1 trago`);
+            vibrate([50, 100, 50]);
+        }
+
+        // ========================================
+        // BOMBA DE PALABRAS
+        // ========================================
+
+        function iniciarBomba() {
+            if (!state.bomba) state.bomba = {};
+
+            const availableCat = CATEGORIAS_BOMBA.filter(c => !state.trash.bomba.includes(c));
+            if (availableCat.length === 0) return showToast('⚠️ No hay categorías en la bomba');
+            const randomCat = availableCat[Math.floor(Math.random() * availableCat.length)];
+            state.bomba.currentCategory = randomCat;
+            state.bomba.isActive = true;
+            state.bomba.timerDuration = 10 + Math.floor(Math.random() * 21); // 10-30 segundos
+
+            vibrate([50, 100, 50]);
+            saveState();
+            render();
+
+            // Auto-detonar después del tiempo aleatorio
+            setTimeout(() => {
+                if (state.bomba && state.bomba.isActive) {
+                    detonarBomba();
+                }
+            }, state.bomba.timerDuration * 1000);
+        }
+
+        function detonarBomba() {
+            if (!state.bomba) return;
+            state.bomba.isActive = false;
+            vibrate([100, 50, 100, 50, 100]);
+            showToast('💥 ¡BOMBA EXPLOTÓ! El último que habló bebe');
+            saveState();
+            render();
+        }
+
+        // ========================================
+        // RETO EN CADENA
+        // ========================================
+
+        function anadirReto() {
+            if (!state.retoCadena) state.retoCadena = { currentChain: [], usedRetos: [] };
+
+            const available = MICRO_RETOS.filter(r => !state.retoCadena.usedRetos.includes(r) && !state.trash.cadena.includes(r));
+            if (available.length === 0) {
+                state.retoCadena.usedRetos = [];
+                showToast('🔄 Retos reiniciados');
+            }
+
+            const availableRetos = MICRO_RETOS.filter(r => !state.retoCadena.usedRetos.includes(r) && !state.trash.cadena.includes(r));
+            const randomReto = availableRetos[Math.floor(Math.random() * availableRetos.length)];
+
+            state.retoCadena.currentChain.push(randomReto);
+            state.retoCadena.usedRetos.push(randomReto);
+
+            vibrate(30);
+            saveState();
+            render();
+        }
+
+        function falloReto() {
+            if (!state.retoCadena || !state.retoCadena.currentChain) return;
+
+            const count = state.retoCadena.currentChain.length;
+            if (count === 0) return showToast('⚠️ No hay retos todavía');
+
+            showToast(`❌ Falló! Bebe ${count} trago${count > 1 ? 's' : ''}`);
+            state.retoCadena.currentChain = [];
+            vibrate([100, 50, 100]);
+            saveState();
+            render();
+        }
+
+        function reiniciarRetoCadena() {
+            if (!state.retoCadena) state.retoCadena = {};
+            state.retoCadena.currentChain = [];
+            showToast('🔄 Cadena reiniciada');
+            vibrate(50);
+            saveState();
+            render();
+        }
+
+        // ========================================
+        // DILEMA DEL REY
+        // ========================================
+
+        function nuevoDilema() {
+            if (!state.dilemaRey) state.dilemaRey = {};
+
+            const availableDilemas = DILEMAS_REY.filter(c => !state.trash.dilema.includes(c.a + "|" + c.b));
+            if (availableDilemas.length === 0) return showToast('⚠️ No hay dilemas disponibles');
+            const randomDilema = availableDilemas[Math.floor(Math.random() * availableDilemas.length)];
+            state.dilemaRey.currentDilema = randomDilema;
+            state.dilemaRey.votesA = 0;
+            state.dilemaRey.votesB = 0;
+
+            vibrate(30);
+            saveState();
+            render();
+        }
+
+        function votarDilema(option) {
+            if (!state.dilemaRey) state.dilemaRey = { votesA: 0, votesB: 0 };
+
+            if (option === 'a') {
+                state.dilemaRey.votesA++;
+            } else {
+                state.dilemaRey.votesB++;
+            }
+
+            vibrate(30);
+            saveState();
+            render();
+        }
+
+        function aplicarDilema() {
+            if (!state.dilemaRey) return;
+
+            const votesA = state.dilemaRey.votesA || 0;
+            const votesB = state.dilemaRey.votesB || 0;
+
+            if (votesA + votesB === 0) return showToast('⚠️ No hay votos todavía');
+
+            const minority = Math.min(votesA, votesB);
+            const winner = votesA > votesB ? 'A' : (votesB > votesA ? 'B' : 'EMPATE');
+
+            if (winner === 'EMPATE') {
+                showToast('⚖️ ¡Empate! Todos beben 1 trago');
+            } else {
+                showToast(`👑 Opción ${winner} gana! ${minority} personas beben 2 tragos`);
+            }
+
+            vibrate([50, 100, 50]);
+
+            // Resetear votos después de aplicar
+            state.dilemaRey.votesA = 0;
+            state.dilemaRey.votesB = 0;
+            saveState();
+            render();
+        }
+
+        // ========================================
+        // MÍMICA EXPRESS
+        // ========================================
+
+        function iniciarMimica() {
+            if (!state.mimicaExpress) state.mimicaExpress = { usedWords: [] };
+
+            // Si ya usamos todas, reiniciar
+            const available = PALABRAS_MIMICA.filter((_, i) => !state.mimicaExpress.usedWords.includes(i) && !state.trash.mimica.includes(PALABRAS_MIMICA[i]));
+            if (available.length === 0) {
+                state.mimicaExpress.usedWords = [];
+                showToast('🔄 Palabras reiniciadas');
+            }
+
+            const availableWords = PALABRAS_MIMICA.filter((_, i) => !state.mimicaExpress.usedWords.includes(i) && !state.trash.mimica.includes(PALABRAS_MIMICA[i]));
+            const randomWord = availableWords[Math.floor(Math.random() * availableWords.length)];
+            const originalIndex = PALABRAS_MIMICA.indexOf(randomWord);
+
+            state.mimicaExpress.currentWord = randomWord;
+            state.mimicaExpress.usedWords.push(originalIndex);
+            state.mimicaExpress.timeLeft = 20;
+
+            vibrate([50, 100]);
+            saveState();
+            render();
+
+            // Iniciar contador
+            state.mimicaExpress.timerInterval = setInterval(() => {
+                if (!state.mimicaExpress || !state.mimicaExpress.timerInterval) {
+                    clearInterval(state.mimicaExpress?.timerInterval);
+                    return;
+                }
+
+                state.mimicaExpress.timeLeft--;
+
+                if (state.mimicaExpress.timeLeft <= 0) {
+                    detenerMimica();
+                    showToast('⏱️ ¡Tiempo terminado!');
+                    vibrate([100, 50, 100]);
+                }
+
+                render();
+            }, 1000);
+        }
+
+        function detenerMimica() {
+            if (state.mimicaExpress?.timerInterval) {
+                clearInterval(state.mimicaExpress.timerInterval);
+                state.mimicaExpress.timerInterval = null;
+                saveState();
+                render();
+            }
+        }
+
+        function resultadoMimica(adivinaron) {
+            detenerMimica();
+
+            if (adivinaron) {
+                showToast('✅ ¡Adivinaron! Actor asigna 2 tragos');
+            } else {
+                showToast('❌ No adivinaron. Actor bebe 2 tragos');
+            }
+
+            vibrate([100, 50, 100]);
+        }
+
+
+    </script>
+</body>
+
+</html>

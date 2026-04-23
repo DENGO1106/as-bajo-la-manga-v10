@@ -1,0 +1,30 @@
+# Ignora archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Ignora carpetas de IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# Ignora archivos de Python (scripts auxiliares)
+__pycache__/
+*.py[cod]
+*.pyc
+venv/
+env/
+
+# Ignora logs
+*.log
+npm-debug.log*
+
+# Ignora archivos temporales
+*.tmp
+*.temp
+~*
+
+# Ignora node_modules si decides usar npm
+node_modules/
+
+# Ignora archivos de Vercel
+.vercel
