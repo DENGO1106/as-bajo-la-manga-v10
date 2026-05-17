@@ -734,6 +734,7 @@
         }
 
         function resetToxicDeck() {
+            if (!state.toxicCategory) state.toxicCategory = ['TODAS'];
             let filtered = TOXIC_CARDS.filter(c => !state.trash.toxic.includes(String(c.id)));
             
             // Filtrar por categorías seleccionadas (si no es TODAS)
@@ -744,6 +745,29 @@
             state.toxicDeck = shuffleArray([...filtered]);
             state.toxicIndex = -1;
         }
+
+        window.toggleToxicCategory = function(cat) {
+            if (!state.toxicCategory) state.toxicCategory = ['TODAS'];
+            if (cat === 'TODAS') {
+                state.toxicCategory = ['TODAS'];
+            } else {
+                if (state.toxicCategory.includes('TODAS')) {
+                    state.toxicCategory = [cat];
+                } else {
+                    if (state.toxicCategory.includes(cat)) {
+                        state.toxicCategory = state.toxicCategory.filter(c => c !== cat);
+                        if (state.toxicCategory.length === 0) {
+                            state.toxicCategory = ['TODAS'];
+                        }
+                    } else {
+                        state.toxicCategory.push(cat);
+                    }
+                }
+            }
+            resetToxicDeck();
+            saveState();
+            render();
+        };
 
         function resetPokerDeck() {
             const filtered = POKER_CARDS.filter(c => !state.trash.poker.includes(String(c.id)));
@@ -975,35 +999,81 @@
             `,
 
             toxic: () => {
-                const categories = ['TODAS', ...new Set(TOXIC_CARDS.map(c => c.cat))];
+                const CAT_META = {
+                    'TODAS':               { icon: '🔥', desc: 'Todo el mazo mezclado' },
+                    'VERDAD INCÓMODA':     { icon: '😳', desc: 'Confiesa lo que nunca dirías' },
+                    'RETO EXPRESS':        { icon: '⚡', desc: 'Retos rápidos y divertidos' },
+                    'REGLA DE ORO':        { icon: '👑', desc: 'Quien manda, manda' },
+                    'DUELO 1 VS 1':        { icon: '🥊', desc: 'Dos jugadores compiten' },
+                    'CASTIGO INSTANTÁNEO': { icon: '💀', desc: 'Bebe sin excusas' },
+                    'MISIÓN SECRETA':      { icon: '🕵️', desc: 'Solo tú sabes tu misión' },
+                    'COMODÍN':             { icon: '🃏', desc: 'Cartas sorpresa' },
+                    'TRIVIA RÁPIDA':       { icon: '🧠', desc: 'Demuestra que sabés' },
+                    'CADENA':              { icon: '🔗', desc: 'Todos participan en cadena' },
+                };
+                const allCats = ['TODAS', ...new Set(TOXIC_CARDS.map(c => c.cat))];
+                const cardCount = state.toxicCategory.includes('TODAS')
+                    ? TOXIC_CARDS.filter(c => !state.trash.toxic.includes(String(c.id))).length
+                    : TOXIC_CARDS.filter(c => state.toxicCategory.includes(c.cat) && !state.trash.toxic.includes(String(c.id))).length;
 
                 if (state.toxicIndex === -1) {
                     return `
-                        <div class="flex flex-col items-center justify-center min-h-[60vh] space-y-8 animate-fade-in text-center">
-                            <div class="bg-amber-500/10 w-32 h-32 rounded-full flex items-center justify-center gold-border">
-                                <span class="text-6xl">🔥</span>
-                            </div>
-                            <div class="space-y-4 w-full">
+                        <div class="space-y-6 animate-fade-in pb-8 pt-4">
+                            <!-- Header -->
+                            <div class="text-center space-y-2">
+                                <div class="bg-amber-500/10 w-20 h-20 rounded-full flex items-center justify-center gold-border mx-auto">
+                                    <span class="text-4xl">🔥</span>
+                                </div>
                                 <h2 class="text-3xl font-extrabold gold-text">TOXIC CARDS</h2>
-                                <div class="space-y-3">
-                                    <p class="text-xs gold-text font-bold uppercase tracking-widest">Filtrar por categoría</p>
-                                    <div class="flex flex-wrap gap-2 justify-center">
-                                        ${categories.map(cat => {
-                                            const isActive = state.toxicCategory.includes(cat);
-                                            return `
-                                            <button onclick="toggleToxicCategory('${cat}')"
-                                                    class="px-4 py-2 rounded-full font-bold text-sm border transition-all touch-feedback
-                                                           ${isActive
-                                                               ? 'bg-amber-500 border-amber-400 text-slate-950'
-                                                               : 'glass border-white/10 text-slate-400 hover:border-amber-500/40 hover:text-amber-400'}">
-                                                ${cat}
-                                            </button>
-                                        `}).join('')}
-                                    </div>
+                                <p class="text-slate-400 text-sm">Elegí las categorías que quieras jugar</p>
+                            </div>
+
+                            <!-- Contador dinámico -->
+                            <div class="glass rounded-2xl px-6 py-3 flex items-center justify-center gap-3 border border-amber-500/20">
+                                <span class="text-amber-400 text-2xl font-black">${cardCount}</span>
+                                <span class="text-slate-400 text-sm font-bold uppercase tracking-wider">cartas disponibles</span>
+                            </div>
+
+                            <!-- Chips de categoría -->
+                            <div class="space-y-3">
+                                <p class="text-xs gold-text font-bold uppercase tracking-widest text-center">Categorías</p>
+                                <div class="flex flex-col gap-3">
+                                    ${allCats.map(cat => {
+                                        const isActive = state.toxicCategory.includes(cat);
+                                        const meta = CAT_META[cat] || { icon: '🎴', desc: '' };
+                                        const count = cat === 'TODAS'
+                                            ? TOXIC_CARDS.filter(c => !state.trash.toxic.includes(String(c.id))).length
+                                            : TOXIC_CARDS.filter(c => c.cat === cat && !state.trash.toxic.includes(String(c.id))).length;
+                                        return `
+                                        <button onclick="toggleToxicCategory('${cat.replace(/'/g, "\\'")}')"
+                                                class="w-full flex items-center gap-4 p-4 rounded-2xl border transition-all touch-feedback ripple
+                                                       ${isActive
+                                                           ? 'bg-amber-500/20 border-amber-400/60 shadow-lg shadow-amber-500/10'
+                                                           : 'glass border-white/5 hover:border-amber-500/30'}">
+                                            <div class="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 text-2xl
+                                                        ${isActive ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400'}">
+                                                ${meta.icon}
+                                            </div>
+                                            <div class="flex-1 text-left">
+                                                <p class="font-black text-sm uppercase tracking-wide ${isActive ? 'gold-text' : 'text-slate-300'}">${cat}</p>
+                                                <p class="text-xs text-slate-500 mt-0.5">${meta.desc}</p>
+                                            </div>
+                                            <div class="flex-shrink-0 flex flex-col items-end gap-1">
+                                                <span class="text-xs font-bold ${isActive ? 'text-amber-400' : 'text-slate-600'}">${count} cartas</span>
+                                                <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0
+                                                            ${isActive ? 'border-amber-400 bg-amber-400' : 'border-slate-600 bg-transparent'}">
+                                                    ${isActive ? '<span class="text-slate-950 text-xs font-black">✓</span>' : ''}
+                                                </div>
+                                            </div>
+                                        </button>
+                                    `}).join('')}
                                 </div>
                             </div>
-                            <button onclick="drawToxicCard()" class="w-full bg-gold text-slate-950 font-black py-4 rounded-2xl text-lg uppercase shadow-lg shadow-amber-500/20">
-                                EMPEZAR
+
+                            <!-- Botón empezar -->
+                            <button onclick="startToxicGame()"
+                                    class="w-full bg-gold text-slate-950 font-black py-5 rounded-2xl text-lg uppercase shadow-lg shadow-amber-500/20 ripple touch-feedback ${cardCount === 0 ? 'opacity-40 pointer-events-none' : ''}">
+                                🔥 EMPEZAR (${cardCount} cartas)
                             </button>
                             <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
                                 ← Volver al Menú
@@ -1240,12 +1310,14 @@
                 return `
                 <div class="space-y-6 animate-fade-in flex flex-col h-full">
                     <!-- Tab Bar Horizontal -->
-                    <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 mask-edges" style="-ms-overflow-style: none; scrollbar-width: none;">
-                        ${tabs.map(t => `
-                            <button onclick="state.libTab = '${t.id}'; render();" class="flex-shrink-0 px-4 py-3 rounded-xl font-bold text-sm transition-all border ${state.libTab === t.id ? (t.id === 'papelera' ? 'bg-red-900 border-red-500/50 text-white shadow-lg' : 'bg-slate-800 border-white/20 text-white shadow-lg') : 'bg-transparent border-transparent text-slate-500 hover:text-slate-400'}">
-                                ${t.label}
-                            </button>
-                        `).join('')}
+                    <div class="sticky top-[80px] z-40 bg-[#020617] pt-2 pb-4 -mx-4 px-4 mask-edges">
+                        <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide" style="-ms-overflow-style: none; scrollbar-width: none;">
+                            ${tabs.map(t => `
+                                <button onclick="state.libTab = '${t.id}'; render();" class="flex-shrink-0 px-4 py-3 rounded-xl font-bold text-sm transition-all border ${state.libTab === t.id ? (t.id === 'papelera' ? 'bg-red-900 border-red-500/50 text-white shadow-lg' : 'bg-slate-800 border-white/20 text-white shadow-lg') : 'bg-transparent border-transparent text-slate-500 hover:text-slate-400'}">
+                                    ${t.label}
+                                </button>
+                            `).join('')}
+                        </div>
                     </div>
 
                     ${state.libTab !== 'papelera' ? `
@@ -1511,22 +1583,7 @@
                             </div>
                             <div class="space-y-5 w-full">
                                 <h2 class="text-3xl font-extrabold text-emerald-400 uppercase">O SE CAGA</h2>
-                                <div class="space-y-3">
-                                    <p class="text-xs text-emerald-400/80 font-bold uppercase tracking-widest">Filtrar Categoría</p>
-                                    <div class="flex flex-wrap gap-2 justify-center">
-                                        ${categories.map(cat => {
-                                            const isActive = state.osecaga.categories.includes(cat.val);
-                                            return `
-                                            <button onclick="toggleOSeCagaCategory('${cat.val}')"
-                                                    class="px-4 py-2 rounded-full font-bold text-sm border transition-all touch-feedback
-                                                           ${isActive
-                                                               ? 'bg-emerald-500 border-emerald-400 text-slate-950'
-                                                               : 'glass border-white/10 text-slate-400 hover:border-emerald-500/40 hover:text-amber-400'}">
-                                                ${cat.label}
-                                            </button>
-                                        `}).join('')}
-                                    </div>
-                                </div>
+                                <p class="text-slate-400 text-sm">Abre la carta y descubre tu destino</p>
                             </div>
                             <button onclick="startOSeCaga()" class="w-full bg-emerald-600 text-white font-black py-4 rounded-2xl text-lg uppercase shadow-lg shadow-emerald-500/20 ripple touch-feedback">
                                 EMPEZAR EL JUEGO
@@ -1616,6 +1673,10 @@
                 // Limpieza al salir de juegos específicos
                 if (state.view === 'osecaga' && view !== 'osecaga') {
                     resetOSeCagaDeck();
+                }
+                // Al entrar a Toxic siempre mostrar la pantalla de selección
+                if (view === 'toxic') {
+                    state.toxicIndex = -1;
                 }
                 
                 state.view = view;
@@ -1709,8 +1770,8 @@
 
         function drawToxicCard() {
             let filteredDeck = TOXIC_CARDS;
-            if (state.toxicCategory !== 'TODAS') {
-                filteredDeck = TOXIC_CARDS.filter(c => c.cat === state.toxicCategory);
+            if (!state.toxicCategory.includes('TODAS') && state.toxicCategory.length > 0) {
+                filteredDeck = TOXIC_CARDS.filter(c => state.toxicCategory.includes(c.cat));
             }
 
             state.toxicIndex++;
@@ -1875,10 +1936,13 @@
                         if (state.libTab === 'toxic' || state.libTab === 'poker') {
                             const card = item.obj;
                             return `
-                                <div class="glass p-6 rounded-[2.5rem] border-white/5 space-y-4 relative overflow-hidden group">
-                                    <button onclick="moverAPapelera('${state.libTab}', '${String(item.id).replace(/'/g, "\\'")}')" class="absolute top-4 right-4 text-slate-400 bg-white/5 hover:bg-red-500/20 hover:text-red-500 w-10 h-10 rounded-full flex items-center justify-center font-bold z-10 transition-all shadow-md">✕</button>
+                                <div onclick="previewCard('${state.libTab}', '${String(item.id).replace(/'/g, "\\'")}')" class="cursor-pointer glass p-6 rounded-[2.5rem] border-white/5 space-y-4 relative overflow-hidden group hover:border-white/20 transition-colors">
+                                    <div class="absolute top-4 right-4 flex gap-2 z-20">
+                                        <button onclick="event.stopPropagation(); previewCard('${state.libTab}', '${String(item.id).replace(/'/g, "\\'")}')" class="text-slate-300 bg-white/5 hover:bg-emerald-500/20 hover:text-emerald-400 w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all shadow-md">👁️</button>
+                                        <button onclick="event.stopPropagation(); moverAPapelera('${state.libTab}', '${String(item.id).replace(/'/g, "\\'")}')" class="text-slate-400 bg-white/5 hover:bg-red-500/20 hover:text-red-500 w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all shadow-md">✕</button>
+                                    </div>
                                     <div class="absolute -right-4 -top-4 text-4xl opacity-[0.03] rotate-12">${state.libTab === 'toxic' ? '🔥' : '🃏'}</div>
-                                    <div class="flex justify-between items-start pr-12">
+                                    <div class="flex justify-between items-start pr-24 pointer-events-none">
                                         <span class="text-[9px] font-black ${state.libTab === 'toxic' ? 'gold-text' : 'text-red-500'} tracking-[0.2em] uppercase border ${state.libTab === 'toxic' ? 'border-amber-500/20 bg-amber-500/5' : 'border-red-500/20 bg-red-500/5'} px-3 py-1 rounded-full">${card.cat || card.category}</span>
                                         <div class="flex items-center gap-1.5 bg-slate-950/50 px-3 py-1 rounded-xl border border-white/5">
                                             <span class="text-[10px]">🥃</span>
@@ -1893,12 +1957,15 @@
                             `;
                         } else if (item.isImg) {
                             return `
-                                <div class="glass p-2 rounded-2xl relative flex gap-4 pr-16 items-center">
-                                    <div class="w-16 h-24 bg-slate-900 rounded-lg overflow-hidden flex-shrink-0">
+                                <div onclick="previewCard('${state.libTab}', '${item.id.replace(/'/g, "\\'")}')" class="cursor-pointer glass p-2 rounded-2xl relative flex gap-4 pr-24 items-center hover:border-white/20 transition-colors">
+                                    <div class="w-16 h-24 bg-slate-900 rounded-lg overflow-hidden flex-shrink-0 pointer-events-none">
                                         <img src="${item.id}" class="w-full h-full object-cover mix-blend-screen" loading="lazy" />
                                     </div>
-                                    <span class="text-sm font-bold text-slate-300 truncate">${item.id.split('/').pop().replace('.jpg','')}</span>
-                                    <button onclick="moverAPapelera('${state.libTab}', '${item.id.replace(/'/g, "\\'")}')" class="absolute top-1/2 -translate-y-1/2 right-4 text-slate-400 bg-white/5 hover:bg-red-500/20 hover:text-red-500 w-10 h-10 rounded-full flex items-center justify-center font-bold z-10 transition-all shadow-md">✕</button>
+                                    <span class="text-sm font-bold text-slate-300 truncate pointer-events-none">${item.id.split('/').pop().replace('.jpg','')}</span>
+                                    <div class="absolute top-1/2 -translate-y-1/2 right-4 flex gap-2 z-20">
+                                        <button onclick="event.stopPropagation(); previewCard('${state.libTab}', '${item.id.replace(/'/g, "\\'")}')" class="text-slate-300 bg-white/5 hover:bg-emerald-500/20 hover:text-emerald-400 w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all shadow-md">👁️</button>
+                                        <button onclick="event.stopPropagation(); moverAPapelera('${state.libTab}', '${item.id.replace(/'/g, "\\'")}')" class="text-slate-400 bg-white/5 hover:bg-red-500/20 hover:text-red-500 w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all shadow-md">✕</button>
+                                    </div>
                                 </div>
                             `;
                         } else {
@@ -2235,6 +2302,79 @@
         }
 
 
+    </script>
+    <!-- Contenedor del Modal de Vista Previa -->
+    <div id="preview-modal" class="hidden fixed inset-0 z-[200] flex flex-col items-center justify-center bg-slate-950/95 backdrop-blur animate-fade-in p-6" onclick="closePreview()">
+        <div id="preview-content" class="w-full max-w-sm relative" onclick="event.stopPropagation()">
+            <!-- Contenido dinámico aquí -->
+        </div>
+        <button onclick="closePreview()" class="mt-8 text-slate-400 bg-white/10 hover:bg-white/20 px-6 py-2 rounded-full font-bold transition-all touch-feedback">Cerrar</button>
+    </div>
+
+    <script>
+        function closePreview() {
+            const modal = document.getElementById('preview-modal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        function previewCard(tab, id) {
+            const modal = document.getElementById('preview-modal');
+            const content = document.getElementById('preview-content');
+            if (!modal || !content) return;
+
+            let html = '';
+            
+            if (tab === 'toxic') {
+                const cardData = TOXIC_CARDS.find(c => String(c.id) === id);
+                if (cardData) {
+                    html = `
+                    <div class="w-full aspect-[2/3] rounded-[2.5rem] card-shadow relative overflow-hidden border border-amber-500/30 bg-[#0f172a] flex flex-col justify-between p-8 transform scale-100">
+                        <div class="absolute -right-12 -top-12 text-9xl opacity-[0.03] rotate-12">🔥</div>
+                        <div class="flex justify-between items-start">
+                            <span class="text-xs font-black gold-text tracking-[0.2em] uppercase border border-amber-500/20 bg-amber-500/5 px-4 py-1.5 rounded-full backdrop-blur-md shadow-lg shadow-amber-500/10">${cardData.cat}</span>
+                            <span class="text-xs font-bold text-slate-500 bg-slate-900/80 px-3 py-1 rounded-full border border-white/5">#${cardData.id}</span>
+                        </div>
+                        <div class="flex flex-col justify-center flex-grow text-center my-6 space-y-4">
+                            <h2 class="text-3xl font-black text-white leading-tight drop-shadow-lg">${cardData.title}</h2>
+                            <p class="text-lg font-light text-slate-300 leading-relaxed max-w-[280px] mx-auto">${cardData.text}</p>
+                        </div>
+                        <div class="bg-amber-500/10 rounded-2xl py-4 px-6 flex items-center justify-center gap-3 border border-amber-500/20 shadow-[0_0_30px_rgba(245,158,11,0.1)] backdrop-blur-md">
+                            <span class="text-2xl">🥃</span>
+                            <span class="font-black text-white text-xl tracking-wide uppercase">${cardData.drink}</span>
+                        </div>
+                    </div>`;
+                }
+            } else if (tab === 'poker') {
+                const cardData = POKER_CARDS.find(c => String(c.id) === id);
+                if (cardData) {
+                    html = `
+                    <div class="w-full aspect-[2/3] rounded-[2.5rem] card-shadow relative overflow-hidden border border-red-500/30 bg-[#0f172a] flex flex-col justify-between p-8 transform scale-100">
+                        <div class="absolute -right-12 -top-12 text-9xl opacity-[0.03] rotate-12">🃏</div>
+                        <div class="flex justify-between items-start">
+                            <span class="text-xs font-black text-red-500 tracking-[0.2em] uppercase border border-red-500/20 bg-red-500/5 px-4 py-1.5 rounded-full backdrop-blur-md shadow-lg shadow-red-500/10">${cardData.category}</span>
+                            <span class="text-xs font-bold text-slate-500 bg-slate-900/80 px-3 py-1 rounded-full border border-white/5">${cardData.rank}${cardData.suit}</span>
+                        </div>
+                        <div class="flex flex-col justify-center flex-grow text-center my-6 space-y-4">
+                            <h2 class="text-3xl font-black text-white leading-tight drop-shadow-lg">${cardData.title}</h2>
+                            <p class="text-lg font-light text-slate-300 leading-relaxed max-w-[280px] mx-auto">${cardData.text}</p>
+                        </div>
+                        <div class="bg-red-500/10 rounded-2xl py-4 px-6 flex items-center justify-center gap-3 border border-red-500/20 shadow-[0_0_30px_rgba(239,68,68,0.1)] backdrop-blur-md">
+                            <span class="text-2xl">🥃</span>
+                            <span class="font-black text-white text-xl tracking-wide uppercase">${cardData.drink}</span>
+                        </div>
+                    </div>`;
+                }
+            } else if (tab === 'osecaga') {
+                html = `
+                    <img src="${id}" alt="O Se Caga" class="w-full h-auto rounded-[2rem] card-shadow object-contain border border-white/10 mx-auto max-h-[80vh]">
+                `;
+            }
+
+            if (html) {
+                content.innerHTML = html;
+                modal.classList.remove('hidden');
+            }
+        }
     </script>
 </body>
 
