@@ -1,0 +1,8 @@
+{
+  "name": "as-bajo-la-manga",
+  "version": "1.0.0",
+  "description": "Juego de cartas interactivo para tomar",
+  "scripts": {
+    "build": "echo 'Sitio estático, sin build necesario'"
+  }
+}
