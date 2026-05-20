@@ -423,7 +423,7 @@
 
         // O SE CAGA
         const OSECAGA_TOTAL_CARDS = 152;
-        const OSECAGA_DATA = {};
+        
         for (let i = 1; i <= OSECAGA_TOTAL_CARDS; i++) {
             if (i === 89) continue; // Saltar carta 89 que no existe
             const filename = `./O SE CAGA/o se caga_${i}.jpg`;
@@ -457,12 +457,7 @@
             toxicCategory: ['TODAS'],
 
             // O Se Caga
-            osecaga: {
-                deck: [],
-                index: -1,
-                categories: ['all'],
-                animationClass: ''
-            },
+            
 
             // Sistema de Papelera (Universal)
             trash: {
@@ -528,12 +523,7 @@
             },
             
             // O SE CAGA
-            osecaga: {
-               deck: [],
-               index: -1,
-               categories: ['all'],
-               animationClass: 'card-enter'
-            },
+            
 
             // Biblioteca
             libTab: 'toxic',
@@ -587,8 +577,7 @@
                 drawToxicCard();
             } else if (state.view === 'poker' && state.pokerIndex >= 0) {
                 drawPokerCard();
-            } else if (state.view === 'osecaga' && state.osecaga.index >= 0) {
-                drawOSeCagaCard();
+            
             }
         }
 
@@ -775,28 +764,7 @@
             state.pokerIndex = -1;
         }
 
-        function resetOSeCagaDeck() {
-            try {
-                // Asegurar que el estado existe
-                if (!state.trash) state.trash = { osecaga: [] };
-                if (!state.trash.osecaga) state.trash.osecaga = [];
-                if (!state.osecaga.categories) state.osecaga.categories = ['all'];
 
-                let filtered = OSECAGA_ALL_CARDS.filter(c => !state.trash.osecaga.includes(c));
-                
-                // Si hay categorías seleccionadas y no es "todas"
-                if (!state.osecaga.categories.includes('all')) {
-                    filtered = filtered.filter(c => state.osecaga.categories.includes(OSECAGA_DATA[c]));
-                }
-
-                state.osecaga.deck = shuffleArray([...filtered]);
-                state.osecaga.index = -1;
-                saveState();
-            } catch (e) {
-                console.error("Error resetting OSeCaga deck:", e);
-                state.osecaga.deck = [...OSECAGA_ALL_CARDS];
-            }
-        }
 
         // --- Sistema de Papelera ---
         function moverAPapelera(juego, id) {
@@ -866,15 +834,7 @@
                         </div>
                     </button>
 
-                    <button onclick="changeView('sabio')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-blue-500/20 ripple touch-feedback">
-                        <div class="bg-blue-500/20 p-4 rounded-2xl group-hover:bg-blue-500/30 transition-colors">
-                            <span class="text-2xl">🧙‍♂️</span>
-                        </div>
-                        <div class="text-left">
-                            <h2 class="text-lg font-bold text-blue-400">EL SABIO DEL GUARO</h2>
-                            <p class="text-slate-400 text-sm">Adivina la siguiente carta</p>
-                        </div>
-                    </button>
+
 
                     <button onclick="changeView('osecaga')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-emerald-500/20 ripple touch-feedback">
                         <div class="bg-emerald-500/20 p-4 rounded-2xl group-hover:bg-emerald-500/30 transition-colors">
@@ -888,6 +848,16 @@
 
                     <!-- Juegos de Grupo Nuevos -->
                     <div class="text-sm uppercase tracking-widest text-slate-500 font-bold px-2 mt-8">👥 Juegos de Grupo</div>
+
+                    <button onclick="changeView('sabio')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-blue-500/20 ripple touch-feedback">
+                        <div class="bg-blue-500/20 p-4 rounded-2xl group-hover:bg-blue-500/30 transition-colors">
+                            <span class="text-2xl">🧙‍♂️</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-blue-400">EL SABIO DEL GUARO</h2>
+                            <p class="text-slate-400 text-sm">Adivina la siguiente carta</p>
+                        </div>
+                    </button>
 
                     <button onclick="changeView('quienEsMas')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-amber-500/20 ripple touch-feedback">
                         <div class="bg-amber-500/20 p-4 rounded-2xl group-hover:bg-amber-500/30 transition-colors">
@@ -1009,8 +979,7 @@
                     'MISIÓN SECRETA':      { icon: '🕵️', desc: 'Solo tú sabes tu misión' },
                     'COMODÍN':             { icon: '🃏', desc: 'Cartas sorpresa' },
                     'TRIVIA RÁPIDA':       { icon: '🧠', desc: 'Demuestra que sabés' },
-                    'CADENA':              { icon: '🔗', desc: 'Todos participan en cadena' },
-                };
+                    'CADENA':              { icon: '🔗', desc: 'Todos participan en cadena' }};
                 const allCats = ['TODAS', ...new Set(TOXIC_CARDS.map(c => c.cat))];
                 const cardCount = state.toxicCategory.includes('TODAS')
                     ? TOXIC_CARDS.filter(c => !state.trash.toxic.includes(String(c.id))).length
@@ -1144,9 +1113,15 @@
 
                 const card = state.pokerDeck[state.pokerIndex];
                 const isRed = ['♥️', '♦️'].includes(card.suit);
+                const currentPlayer = state.players[state.currentPlayerIndex];
 
                 return `
                 <div class="space-y-8 animate-fade-in flex flex-col items-center">
+                    <div class="w-full text-center space-y-1">
+                        <span class="text-xs text-red-400 font-bold uppercase tracking-[0.3em]">Turno de</span>
+                        <h2 class="text-2xl font-black text-white uppercase">${currentPlayer?.name || currentPlayer}</h2>
+                    </div>
+
                     <div class="w-full glass rounded-[2.5rem] p-8 min-h-[400px] flex flex-col items-center justify-between card-shadow card-enter relative overflow-hidden border-red-500/30">
                         <!-- Card Identity -->
                         <div class="absolute top-8 left-8 text-4xl font-black ${isRed ? 'text-red-500' : 'text-slate-300'} flex flex-col items-center">
@@ -1295,7 +1270,7 @@
                 const tabs = [
                     { id: 'toxic', label: '🔥 TOXIC' },
                     { id: 'poker', label: '🃏 POKER' },
-                    { id: 'osecaga', label: '💩 O SE CAGA' },
+                    
                     { id: 'quienEsMas', label: '🏆 QUIÉN' },
                     { id: 'bomba', label: '💣 BOMBA' },
                     { id: 'cadena', label: '⛓️ CADENA' },
@@ -1698,75 +1673,6 @@
             render();
         }
 
-        function startOSeCaga() {
-            console.log("Starting O Se Caga...");
-            // Usamos la función centralizada de reset que ya maneja las múltiples categorías
-            resetOSeCagaDeck();
-            
-            // Si después de filtrar no hay cartas, mostrar aviso
-            if (state.osecaga.deck.length === 0) {
-                showToast("⚠️ No hay cartas para esta selección");
-                return;
-            }
-
-            state.osecaga.index = 0;
-            state.currentPlayerIndex = 0;
-            state.osecaga.animationClass = 'card-enter';
-            saveState();
-            render();
-        }
-
-        // toggleOSeCagaCategory ya maneja los cambios de categoría de forma múltiple
-
-        function drawOSeCagaCard() {
-            if (state.osecaga.index >= state.osecaga.deck.length - 1) {
-                // Fin del mazo: Rebarajar
-                state.osecaga.deck = shuffleArray([...state.osecaga.deck]);
-                state.osecaga.index = 0;
-                showToast('🔄 Se acabó el mazo, barajando...');
-            } else {
-                state.osecaga.index++;
-            }
-            state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
-            state.osecaga.animationClass = 'slide-in-right';
-            saveState();
-            render();
-        }
-
-        function mostrarInstruccionesOSeCaga() {
-            const instImg = './O SE CAGA/Instrucciones.jpg';
-            const modalHtml = `
-                <div id="osecaga-modal" class="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-950/95 backdrop-blur animate-fade-in p-6" onclick="this.remove()">
-                    <div class="glass w-full max-w-md p-2 rounded-[2rem] border-emerald-500/40 relative overflow-hidden flex flex-col">
-                        <img src="${instImg}" class="w-full rounded-2xl mb-4" alt="Instrucciones O Se Caga" onerror="this.onerror=null; this.src=''; this.alt='Instrucciones no encontradas';">
-                        <div class="px-4 pb-4 text-emerald-100 text-sm">
-                            <p class="mb-2"><strong class="text-emerald-400">FLASH:</strong> Toman todos los que son más pequeños que usted.</p>
-                            <p><strong class="text-emerald-400">JUEGO:</strong> Últim@ en pie. Todos toman shots al mismo tiempo. El que gane asigna retos.</p>
-                        </div>
-                        <button class="bg-white text-slate-900 font-bold py-3 mx-4 mb-4 rounded-xl shadow-lg uppercase tracking-wider text-sm">Cerrar</button>
-                    </div>
-                </div>
-            `;
-            document.body.insertAdjacentHTML('beforeend', modalHtml);
-        }
-
-        function toggleOSeCagaCategory(cat) {
-            if (!state.osecaga.categories) state.osecaga.categories = ['all'];
-            
-            if (cat === 'all') {
-                state.osecaga.categories = ['all'];
-            } else {
-                state.osecaga.categories = state.osecaga.categories.filter(c => c !== 'all');
-                if (state.osecaga.categories.includes(cat)) {
-                    state.osecaga.categories = state.osecaga.categories.filter(c => c !== cat);
-                    if (state.osecaga.categories.length === 0) state.osecaga.categories = ['all'];
-                } else {
-                    state.osecaga.categories.push(cat);
-                }
-            }
-            saveState();
-            render();
-        }
 
         function drawToxicCard() {
             let filteredDeck = TOXIC_CARDS;
@@ -1807,6 +1713,7 @@
                 state.pokerIndex = 0;
                 showToast('🔄 Se barajó el mazo nuevamente');
             }
+            state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
             saveState();
             render();
         }
