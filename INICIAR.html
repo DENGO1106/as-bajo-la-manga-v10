@@ -651,8 +651,6 @@
                 if (state.toxicDeck.length === 0 && TOXIC_CARDS.length > 0) resetToxicDeck();
                 if (state.pokerDeck.length === 0 && POKER_CARDS.length > 0) resetPokerDeck();
                 if (!state.sinexcusas.deck || state.sinexcusas.deck.length === 0) resetSinExcusasDeck();
-                // Siempre redirigir a setup si no hay jugadores
-                state.view = 'setup';
             } catch (e) {
                 console.error("Error loading state", e);
                 resetAll();
@@ -660,8 +658,22 @@
         } else {
             resetAll();
         }
-        // Sin jugadores → setup siempre
-        if (!savedState) state.view = 'welcome'; else if (state.players.length < 2) state.view = 'welcome';
+        
+        // Limpiar vistas obsoletas que ya no existen (ej: el sabio del guaro)
+        const validViews = ['welcome','menu','setup','auth','profile','onlineRoom',
+            'toxic','poker','sinexcusas','sinexcusasSetup','quienEsMas','quienEsMasGame',
+            'bomba','retoCadena','dilemaRey','mimicaExpress','ultimaCarta','biblioteca'];
+        if (!validViews.includes(state.view)) {
+            console.warn('Vista guardada no es válida:', state.view, '-> welcome');
+            state.view = 'welcome';
+        }
+
+        // Ruteo inicial: si no hay estado previo o no hay jugadores listos
+        if (!savedState) {
+            state.view = 'welcome';
+        } else if (state.players.length < 2) {
+            state.view = 'welcome';
+        }
 
         let _inactivityWarningTimer = null;
         let _inactivityExpireTimer = null;
