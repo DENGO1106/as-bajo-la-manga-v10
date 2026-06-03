@@ -2357,8 +2357,6 @@
         });
 
         // Initial render
-        initSupabase();
-        checkSession();
         render();
 
         // ========================================
@@ -3091,6 +3089,10 @@
                 modal.classList.remove('hidden');
             }
         }
+
+        // Initialize Supabase now that consts are defined
+        initSupabase();
+        checkSession();
     </script>
 </body>
 
