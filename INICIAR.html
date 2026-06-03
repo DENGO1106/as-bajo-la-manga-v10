@@ -628,19 +628,17 @@
             vibrate([50, 100, 50]);
         }
 
-        // Initialize state from localStorage
-        const savedState = localStorage.getItem('as_bajo_la_manga_state');
+        // Initialize state from storage (hybrid)
+        const savedSession = sessionStorage.getItem('as_bajo_la_manga_state');
+        const savedLocal = localStorage.getItem('as_bajo_la_manga_state');
+        const savedState = savedLocal || savedSession;
         if (savedState) {
             try {
                 const parsed = JSON.parse(savedState);
-                // Restaurar estado EXCEPTO datos de jugadores (se resetean siempre)
                 const baseState = { ...state };
                 state = {
                     ...baseState,
-                    ...parsed,
-                    players: [],              // ✅ SIEMPRE vacío al recargar
-                    currentPlayerIndex: 0,    // ✅ SIEMPRE 0
-                    gameStarted: false        // ✅ SIEMPRE false
+                    ...parsed
                 };
                 
                 // Asegurar que las subpropiedades críticas no se pierdan al sobrescribir
@@ -666,7 +664,13 @@
         if (state.players.length < 2) state.view = 'setup';
 
         function saveState() {
-            localStorage.setItem('as_bajo_la_manga_state', JSON.stringify(state));
+            if (state.user) {
+                localStorage.setItem('as_bajo_la_manga_state', JSON.stringify(state));
+                sessionStorage.removeItem('as_bajo_la_manga_state');
+            } else {
+                sessionStorage.setItem('as_bajo_la_manga_state', JSON.stringify(state));
+                localStorage.removeItem('as_bajo_la_manga_state');
+            }
         }
 
         // --- Utilidades ---
@@ -1694,14 +1698,14 @@
                     ${state.user ? `
                     <div class="glass p-6 rounded-3xl border border-amber-500/20 text-center space-y-4">
                         <p class="text-emerald-400 font-bold">✅ Sesión Iniciada</p>
-                        <p class="text-slate-300 text-sm">${state.user.email}</p>
+                        <p class="text-slate-300 text-sm font-bold text-amber-400">@${state.user.email.split("@")[0]}</p>
                         <button onclick="signOutSupabase()" class="w-full bg-red-500/20 text-red-400 border border-red-500/30 p-4 rounded-2xl font-black touch-feedback ripple">
                             Cerrar Sesión
                         </button>
                     </div>
                     ` : `
                     <div class="glass p-6 rounded-3xl border border-amber-500/20 space-y-4">
-                        <input id="auth-email" type="email" placeholder="Correo electrónico" 
+                        <input id="auth-username" type="text" placeholder="Nombre de usuario" autocomplete="off" 
                                class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500">
                         <input id="auth-password" type="password" placeholder="Contraseña" 
                                class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500">
@@ -2533,9 +2537,11 @@
 
         async function signInWithSupabase() {
             if (!supabaseClient) { showToast('⚠️ Sin conexión a Supabase'); return; }
-            const email = document.getElementById('auth-email').value.trim();
+            const usernameRaw = document.getElementById('auth-username').value.trim();
+            const username = usernameRaw.toLowerCase().replace(/\s+/g, '');
+            const email = username + '@asbajolamanga.com';
             const password = document.getElementById('auth-password').value.trim();
-            if (!email || !password) { showToast('⚠️ Llená todos los campos'); return; }
+            if (!username || !password) { showToast('⚠️ Llená todos los campos'); return; }
             
             const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
             if (error) {
@@ -2548,9 +2554,11 @@
 
         async function signUpWithSupabase() {
             if (!supabaseClient) { showToast('⚠️ Sin conexión a Supabase'); return; }
-            const email = document.getElementById('auth-email').value.trim();
+            const usernameRaw = document.getElementById('auth-username').value.trim();
+            const username = usernameRaw.toLowerCase().replace(/\s+/g, '');
+            const email = username + '@asbajolamanga.com';
             const password = document.getElementById('auth-password').value.trim();
-            if (!email || !password) { showToast('⚠️ Llená todos los campos'); return; }
+            if (!username || !password) { showToast('⚠️ Llená todos los campos'); return; }
             
             const { data, error } = await supabaseClient.auth.signUp({ email, password });
             if (error) {
@@ -2563,8 +2571,10 @@
         async function signOutSupabase() {
             if (!supabaseClient) return;
             await supabaseClient.auth.signOut();
-            showToast('👋 Sesión cerrada');
-            changeView('menu');
+            localStorage.removeItem('as_bajo_la_manga_state');
+            sessionStorage.removeItem('as_bajo_la_manga_state');
+            showToast('👋 Sesión cerrada, reiniciando...');
+            setTimeout(() => window.location.reload(), 1000);
         }
         // ========================================
         // LA ÚLTIMA CARTA — LÓGICA
