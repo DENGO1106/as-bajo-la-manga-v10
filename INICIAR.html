@@ -629,9 +629,14 @@
         }
 
         // Initialize state from storage (hybrid)
-        const savedSession = sessionStorage.getItem('as_bajo_la_manga_state');
-        const savedLocal = localStorage.getItem('as_bajo_la_manga_state');
-        const savedState = savedLocal || savedSession;
+        let savedState = null;
+        try {
+            const savedSession = sessionStorage.getItem('as_bajo_la_manga_state');
+            const savedLocal = localStorage.getItem('as_bajo_la_manga_state');
+            savedState = savedLocal || savedSession;
+        } catch (e) {
+            console.warn("Storage no disponible (posible webview o modo incógnito):", e);
+        }
         if (savedState) {
             try {
                 const parsed = JSON.parse(savedState);
