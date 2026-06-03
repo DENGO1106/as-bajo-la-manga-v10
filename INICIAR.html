@@ -397,52 +397,6 @@
 
 <body class="min-h-screen flex flex-col">
 
-    <!-- ========================================== -->
-    <div id="admin-lockscreen">
-        <div class="text-center space-y-6 w-full max-w-sm px-6">
-            <div class="w-24 h-24 bg-slate-800 rounded-3xl mx-auto flex items-center justify-center border border-white/5 shadow-2xl mb-8">
-                <span style="font-size: 3rem;">🔒</span>
-            </div>
-            
-            <div id="admin-numpad" class="space-y-6 hidden">
-                <div class="flex justify-center gap-3 mb-8">
-                    <div id="pd0" class="pin-dot"></div><div id="pd1" class="pin-dot"></div>
-                    <div id="pd2" class="pin-dot"></div><div id="pd3" class="pin-dot"></div>
-                    <div id="pd4" class="pin-dot"></div><div id="pd5" class="pin-dot"></div>
-                    <div id="pd6" class="pin-dot"></div><div id="pd7" class="pin-dot"></div>
-                </div>
-                <div class="grid grid-cols-3 gap-4">
-                    <!-- Numbers 1-9 -->
-                    <button onclick="adminPinInput('1')" class="h-16 rounded-2xl bg-slate-800/50 text-2xl font-bold text-white border border-white/5 active:bg-slate-700">1</button>
-                    <button onclick="adminPinInput('2')" class="h-16 rounded-2xl bg-slate-800/50 text-2xl font-bold text-white border border-white/5 active:bg-slate-700">2</button>
-                    <button onclick="adminPinInput('3')" class="h-16 rounded-2xl bg-slate-800/50 text-2xl font-bold text-white border border-white/5 active:bg-slate-700">3</button>
-                    <button onclick="adminPinInput('4')" class="h-16 rounded-2xl bg-slate-800/50 text-2xl font-bold text-white border border-white/5 active:bg-slate-700">4</button>
-                    <button onclick="adminPinInput('5')" class="h-16 rounded-2xl bg-slate-800/50 text-2xl font-bold text-white border border-white/5 active:bg-slate-700">5</button>
-                    <button onclick="adminPinInput('6')" class="h-16 rounded-2xl bg-slate-800/50 text-2xl font-bold text-white border border-white/5 active:bg-slate-700">6</button>
-                    <button onclick="adminPinInput('7')" class="h-16 rounded-2xl bg-slate-800/50 text-2xl font-bold text-white border border-white/5 active:bg-slate-700">7</button>
-                    <button onclick="adminPinInput('8')" class="h-16 rounded-2xl bg-slate-800/50 text-2xl font-bold text-white border border-white/5 active:bg-slate-700">8</button>
-                    <button onclick="adminPinInput('9')" class="h-16 rounded-2xl bg-slate-800/50 text-2xl font-bold text-white border border-white/5 active:bg-slate-700">9</button>
-                    <!-- Bottom row -->
-                    <button onclick="adminPinClear()" class="h-16 rounded-2xl bg-red-500/10 text-xl font-bold text-red-400 border border-red-500/20 active:bg-red-500/30">⌫</button>
-                    <button onclick="adminPinInput('0')" class="h-16 rounded-2xl bg-slate-800/50 text-2xl font-bold text-white border border-white/5 active:bg-slate-700">0</button>
-                    <button onclick="adminPinSubmit()" class="h-16 rounded-2xl bg-amber-500/10 text-xl font-bold text-amber-400 border border-amber-500/20 active:bg-amber-500/30">OK</button>
-                </div>
-            </div>
-
-            <div id="admin-textpad" class="space-y-4">
-                <input id="admin-text-input" type="password" placeholder="Contraseña de acceso" 
-                       class="w-full bg-slate-800 px-6 py-4 rounded-2xl text-center text-white text-lg tracking-widest focus:outline-none focus:ring-2 focus:ring-amber-500 border border-white/10"
-                       onkeydown="if(event.key === 'Enter') adminTextSubmit()">
-                <button onclick="adminTextSubmit()" class="w-full p-4 rounded-2xl font-black text-slate-950 text-lg uppercase shadow-xl" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
-                    Desbloquear
-                </button>
-            </div>
-
-            <p id="admin-error-msg" class="text-red-400 font-bold h-6 text-sm"></p>
-            <p class="text-xs text-slate-500 font-medium">As Bajo La Manga — Acceso Restringido</p>
-        </div>
-    </div>
-
 
     <!-- Header -->
     <header id="app-header" class="p-6 flex items-center justify-between sticky top-0 z-50 glass mb-4">
