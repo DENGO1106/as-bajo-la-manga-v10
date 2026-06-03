@@ -651,11 +651,8 @@
                 if (state.toxicDeck.length === 0 && TOXIC_CARDS.length > 0) resetToxicDeck();
                 if (state.pokerDeck.length === 0 && POKER_CARDS.length > 0) resetPokerDeck();
                 if (!state.sinexcusas.deck || state.sinexcusas.deck.length === 0) resetSinExcusasDeck();
-                // Limpiar vistas obsoletas que ya no existen
-                const validViews = ['welcome','menu','setup','auth','profile','onlineRoom',
-                    'toxic','poker','sinexcusas','sinexcusasSetup','quienEsMas','quienEsMasGame',
-                    'bomba','retoCadena','dilemaRey','mimicaExpress','ultimaCarta','biblioteca'];
-                if (!validViews.includes(state.view)) state.view = 'welcome';
+                // Siempre redirigir a setup si no hay jugadores
+                state.view = 'setup';
             } catch (e) {
                 console.error("Error loading state", e);
                 resetAll();
@@ -663,12 +660,8 @@
         } else {
             resetAll();
         }
-        // Ruteo inicial inteligente
-        if (!savedState) {
-            state.view = 'welcome';
-        } else if (state.players.length < 2) {
-            state.view = 'welcome';
-        }
+        // Sin jugadores → setup siempre
+        if (!savedState) state.view = 'welcome'; else if (state.players.length < 2) state.view = 'welcome';
 
         let _inactivityWarningTimer = null;
         let _inactivityExpireTimer = null;
@@ -697,11 +690,10 @@
                 sessionStorage.setItem('as_bajo_la_manga_state', JSON.stringify(state));
                 localStorage.removeItem('as_bajo_la_manga_state');
             }
-            
-            if (state.roomCode && !isRemote && supabaseClient) {
+            if (state.roomCode && !isRemote && window.supabaseClient) {
                 const stateToSync = { ...state };
                 delete stateToSync.user;
-                supabaseClient.from('rooms').update({
+                window.supabaseClient.from('rooms').update({
                     game_state: stateToSync,
                     last_activity: new Date().toISOString()
                 }).eq('code', state.roomCode).then(({error}) => {
@@ -1004,16 +996,15 @@
 
                     <!-- Modo Multijugador Global -->
                     <button onclick="changeView('onlineRoom')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-emerald-500/20 ripple touch-feedback mt-4 relative overflow-hidden">
-                        ${state.roomCode ? '<div class="absolute inset-0 bg-emerald-500/10 animate-pulse"></div>' : ''}
-                        <div class="bg-emerald-500/20 p-4 rounded-2xl group-hover:bg-emerald-500/30 transition-colors z-10">
-                            <span class="text-2xl">${state.roomCode ? '🟢' : '🌐'}</span>
+                        <div class="bg-emerald-500/20 p-4 rounded-2xl group-hover:bg-emerald-500/30 transition-colors">
+                            <span class="text-2xl">\${state.roomCode ? '🟢' : '🌐'}</span>
                         </div>
-                        <div class="text-left z-10">
-                            <h2 class="text-lg font-bold ${state.roomCode ? 'text-emerald-400' : 'text-emerald-500'}">SALA MULTIJUGADOR</h2>
-                            <p class="text-slate-400 text-sm">${state.roomCode ? 'Conectado a sala: ' + state.roomCode : 'Sincroniza pantallas en vivo'}</p>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold \${state.roomCode ? 'text-emerald-400' : 'text-emerald-500'}">SALA MULTIJUGADOR</h2>
+                            <p class="text-slate-400 text-sm">\${state.roomCode ? 'Conectado: ' + state.roomCode : 'Sincroniza pantallas en vivo'}</p>
                         </div>
                     </button>
-                    
+
                     <!-- Juegos de Cartas -->
                     <div class="text-sm uppercase tracking-widest text-slate-500 font-bold px-2 mt-2">🃏 Juegos de Cartas</div>
                     
@@ -2516,8 +2507,7 @@
             if (views[state.view]) {
                 container.innerHTML = views[state.view]();
             } else {
-                // Vista desconocida — redirigir a welcome para evitar pantalla en blanco
-                console.warn('Vista desconocida:', state.view, '→ redirigiendo a welcome');
+                console.warn('Vista desconocida:', state.view, '→ welcome');
                 state.view = 'welcome';
                 container.innerHTML = views.welcome();
             }
@@ -2543,7 +2533,8 @@
 // Service Worker removido (sw.js eliminado)
         });
 
-        // render() is called after checkSession() resolves (bottom of script)
+        // Initial render
+        render();
 
         // ========================================
         // GESTIÓN DE JUGADORES
@@ -2709,25 +2700,16 @@
             if (!supabaseClient) return showToast('⚠️ Sin conexión a internet');
             const code = Math.floor(100000 + Math.random() * 900000).toString();
             state.roomCode = code;
-
             const now = new Date();
             const expiresAt = new Date(now.getTime() + ROOM_INACTIVITY_MS);
-
             const stateToSync = { ...state };
             delete stateToSync.user;
-
             const { error } = await supabaseClient.from('rooms').insert({
-                code: code,
-                game_state: stateToSync,
+                code, game_state: stateToSync,
                 expires_at: expiresAt.toISOString(),
                 last_activity: now.toISOString()
             });
-
-            if (error) {
-                state.roomCode = null;
-                return showToast('❌ Error al crear sala: ' + error.message);
-            }
-
+            if (error) { state.roomCode = null; return showToast('❌ Error al crear sala: ' + error.message); }
             saveState(true);
             conectarSala(code);
             resetInactivityTimers();
@@ -2736,18 +2718,9 @@
         }
 
         function conectarSala(code) {
-            if (realtimeChannel) {
-                supabaseClient.removeChannel(realtimeChannel);
-                realtimeChannel = null;
-            }
-
+            if (realtimeChannel) { supabaseClient.removeChannel(realtimeChannel); realtimeChannel = null; }
             realtimeChannel = supabaseClient.channel('room_' + code)
-                .on('postgres_changes', {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'rooms',
-                    filter: `code=eq.${code}`
-                }, (payload) => {
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: \`code=eq.\${code}\` }, (payload) => {
                     const remoteState = payload.new.game_state;
                     if (remoteState) {
                         const localUser = state.user;
@@ -2756,11 +2729,7 @@
                         render();
                     }
                 })
-                .subscribe((status) => {
-                    if (status === 'SUBSCRIBED') {
-                        console.log('✅ Conectado a sala realtime:', code);
-                    }
-                });
+                .subscribe();
         }
 
         async function unirseSala() {
@@ -2768,26 +2737,15 @@
             const code = input?.value.trim();
             if (!code || code.length !== 6) return showToast('✍️ Código de 6 dígitos');
             if (!supabaseClient) return showToast('⚠️ Sin conexión');
-
-            const { data, error } = await supabaseClient
-                .from('rooms')
-                .select('game_state, last_activity')
-                .eq('code', code)
-                .single();
-
+            const { data, error } = await supabaseClient.from('rooms').select('game_state, last_activity').eq('code', code).single();
             if (error || !data) return showToast('❌ Sala no encontrada');
-
-            // Check inactivity — reject if last_activity > 20 min ago
             if (data.last_activity) {
-                const lastActive = new Date(data.last_activity);
-                const diffMs = Date.now() - lastActive.getTime();
+                const diffMs = Date.now() - new Date(data.last_activity).getTime();
                 if (diffMs > ROOM_INACTIVITY_MS) {
-                    // Clean up expired room
                     await supabaseClient.from('rooms').delete().eq('code', code);
                     return showToast('⏱️ Sala expirada por inactividad');
                 }
             }
-
             const localUser = state.user;
             state = { ...data.game_state, user: localUser };
             state.roomCode = code;
@@ -2798,16 +2756,13 @@
             render();
         }
 
-        function abandonarSala(expired = false) {
+        function abandonarSala() {
             clearTimeout(_inactivityWarningTimer);
             clearTimeout(_inactivityExpireTimer);
-            if (realtimeChannel && supabaseClient) {
-                supabaseClient.removeChannel(realtimeChannel);
-                realtimeChannel = null;
-            }
+            if (realtimeChannel && supabaseClient) { supabaseClient.removeChannel(realtimeChannel); realtimeChannel = null; }
             state.roomCode = null;
             saveState();
-            if (!expired) showToast('🔌 Desconectado de la sala');
+            showToast('🔌 Desconectado de la sala');
             render();
         }
 
@@ -3450,13 +3405,8 @@
 
         // Initialize Supabase now that consts are defined
         initSupabase();
-        // checkSession is async - it will call render() when done
-        checkSession().then(() => {
-            render();
-            if (state.roomCode) {
-                conectarSala(state.roomCode);
-            }
-        });
+        checkSession();
+        if (state.roomCode) { conectarSala(state.roomCode); }
     </script>
 </body>
 
