@@ -997,11 +997,11 @@
                     <!-- Modo Multijugador Global -->
                     <button onclick="changeView('onlineRoom')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-emerald-500/20 ripple touch-feedback mt-4 relative overflow-hidden">
                         <div class="bg-emerald-500/20 p-4 rounded-2xl group-hover:bg-emerald-500/30 transition-colors">
-                            <span class="text-2xl">\${state.roomCode ? '🟢' : '🌐'}</span>
+                            <span class="text-2xl">${state.roomCode ? '🟢' : '🌐'}</span>
                         </div>
                         <div class="text-left">
-                            <h2 class="text-lg font-bold \${state.roomCode ? 'text-emerald-400' : 'text-emerald-500'}">SALA MULTIJUGADOR</h2>
-                            <p class="text-slate-400 text-sm">\${state.roomCode ? 'Conectado: ' + state.roomCode : 'Sincroniza pantallas en vivo'}</p>
+                            <h2 class="text-lg font-bold ${state.roomCode ? 'text-emerald-400' : 'text-emerald-500'}">SALA MULTIJUGADOR</h2>
+                            <p class="text-slate-400 text-sm">${state.roomCode ? 'Conectado: ' + state.roomCode : 'Sincroniza pantallas en vivo'}</p>
                         </div>
                     </button>
 
@@ -2720,7 +2720,7 @@
         function conectarSala(code) {
             if (realtimeChannel) { supabaseClient.removeChannel(realtimeChannel); realtimeChannel = null; }
             realtimeChannel = supabaseClient.channel('room_' + code)
-                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: \`code=eq.\${code}\` }, (payload) => {
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `code=eq.${code}` }, (payload) => {
                     const remoteState = payload.new.game_state;
                     if (remoteState) {
                         const localUser = state.user;
