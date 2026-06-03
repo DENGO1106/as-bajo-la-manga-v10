@@ -388,39 +388,6 @@
             color: #fbbf24;
             text-shadow: 0 0 20px rgba(245,158,11,0.4);
         }
-        /* ADMIN LOCKSCREEN */
-        #admin-lockscreen {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(15, 23, 42, 0.98);
-            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-            z-index: 99999; display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            transition: opacity 0.5s ease;
-        }
-        #admin-lockscreen.unlocking { opacity: 0; pointer-events: none; }
-        .lock-shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
-        @keyframes shake {
-            10%, 90% { transform: translate3d(-1px, 0, 0); }
-            20%, 80% { transform: translate3d(2px, 0, 0); }
-            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
-            40%, 60% { transform: translate3d(4px, 0, 0); }
-        }
-        .pin-dot {
-            width: 16px; height: 16px; border-radius: 50%;
-            border: 2px solid rgba(255,255,255,0.2);
-            transition: all 0.2s;
-        }
-        .pin-dot.filled { background: #fbbf24; border-color: #fbbf24; box-shadow: 0 0 10px rgba(245,158,11,0.5); }
-        .card-suit-red { color: #ef4444; }
-        .card-suit-black { color: #f8fafc; }
-        .step-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.2); transition: all 0.3s; }
-        .step-dot.active { background: #fbbf24; transform: scale(1.5); }
-        .step-dot.done { background: #10b981; }
-        .card-reveal { animation: reveal 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) both; }
-        @keyframes reveal {
-            0% { transform: rotateY(90deg) scale(0.8); opacity: 0; }
-            100% { transform: rotateY(0deg) scale(1); opacity: 1; }
-        }
         /* Prevent pull-to-refresh on mobile browsers */
         body {
             overscroll-behavior-y: contain;
@@ -430,8 +397,6 @@
 
 <body class="min-h-screen flex flex-col">
 
-    <!-- ========================================== -->
-    <!-- ADMIN LOCKSCREEN (GATE DE ACCESO)          -->
     <!-- ========================================== -->
     <div id="admin-lockscreen">
         <div class="text-center space-y-6 w-full max-w-sm px-6">
@@ -526,16 +491,6 @@
             // Poker Caliente
             pokerDeck: [],
             pokerIndex: -1,
-
-            // El Sabio
-            sabio: {
-                current: null,
-                next: null,
-                feedback: null,
-                mode: 'participante',
-                drinks: 0,
-                questionType: null
-            },
 
             // ¿Quién Es Más?
             quienEsMas: {
@@ -905,6 +860,11 @@
         const views = {
             menu: () => `
                 <div class="space-y-4 animate-fade-in py-4">
+
+                    <!-- Auth Button -->
+                    <button onclick="changeView('auth')" class="absolute top-4 right-4 glass p-2 rounded-xl text-xl touch-feedback border z-50 ${state.user ? 'border-emerald-500/40 text-emerald-400' : 'border-amber-500/20 text-amber-400'}">
+                        ${state.user ? '🔓' : '🔐'}
+                    </button>
                     <!-- Jugadores activos -->
                     <button onclick="changeView('setup')" class="w-full glass p-4 rounded-2xl flex items-center gap-4 border-white/10 btn-hover ripple touch-feedback">
                         <div class="flex gap-1">
@@ -953,16 +913,6 @@
 
                     <!-- Juegos de Grupo Nuevos -->
                     <div class="text-sm uppercase tracking-widest text-slate-500 font-bold px-2 mt-8">👥 Juegos de Grupo</div>
-
-                    <button onclick="changeView('sabio')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-blue-500/20 ripple touch-feedback">
-                        <div class="bg-blue-500/20 p-4 rounded-2xl group-hover:bg-blue-500/30 transition-colors">
-                            <span class="text-2xl">🧙‍♂️</span>
-                        </div>
-                        <div class="text-left">
-                            <h2 class="text-lg font-bold text-blue-400">EL SABIO DEL GUARO</h2>
-                            <p class="text-slate-400 text-sm">Adivina la siguiente carta</p>
-                        </div>
-                    </button>
 
                     <button onclick="changeView('quienEsMas')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-amber-500/20 ripple touch-feedback">
                         <div class="bg-amber-500/20 p-4 rounded-2xl group-hover:bg-amber-500/30 transition-colors">
@@ -1778,6 +1728,43 @@
                 `;
             },
 
+
+            auth: () => `
+                <div class="space-y-6 animate-fade-in py-4">
+                    <div class="text-center space-y-2">
+                        <div style="font-size:3rem;">🔐</div>
+                        <h2 class="text-3xl font-black gradient-gold uppercase">Acceso VIP</h2>
+                        <p class="text-slate-400 text-sm">Iniciá sesión para desbloquear modos exclusivos</p>
+                    </div>
+
+                    ${state.user ? `
+                    <div class="glass p-6 rounded-3xl border border-amber-500/20 text-center space-y-4">
+                        <p class="text-emerald-400 font-bold">✅ Sesión Iniciada</p>
+                        <p class="text-slate-300 text-sm">${state.user.email}</p>
+                        <button onclick="signOutSupabase()" class="w-full bg-red-500/20 text-red-400 border border-red-500/30 p-4 rounded-2xl font-black touch-feedback ripple">
+                            Cerrar Sesión
+                        </button>
+                    </div>
+                    ` : `
+                    <div class="glass p-6 rounded-3xl border border-amber-500/20 space-y-4">
+                        <input id="auth-email" type="email" placeholder="Correo electrónico" 
+                               class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500">
+                        <input id="auth-password" type="password" placeholder="Contraseña" 
+                               class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500">
+                        
+                        <div class="grid grid-cols-2 gap-3 mt-4">
+                            <button onclick="signInWithSupabase()" class="p-4 rounded-2xl font-black text-slate-950 touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                                Iniciar Sesión
+                            </button>
+                            <button onclick="signUpWithSupabase()" class="glass p-4 rounded-2xl font-bold text-amber-400 border border-amber-500/20 touch-feedback ripple">
+                                Registrarse
+                            </button>
+                        </div>
+                    </div>
+                    `}
+                    <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">← Volver al Menú</button>
+                </div>
+            `,
             ultimaCarta: () => {
                 // Lobby de configuración inicial
                 if (!state.ultimaCarta || !state.ultimaCarta.active) {
@@ -2252,60 +2239,6 @@
             render();
         }
 
-        function initSabio() {
-            state.sabio.current = getRandomCard();
-            state.sabio.next = getRandomCard();
-            state.sabio.feedback = null;
-            state.sabio.drinks = 0;
-            state.sabio.questionType = ['color', 'suit', 'compare'][Math.floor(Math.random() * 3)];
-            saveState();
-            render();
-        }
-
-        function checkSabio(type, value) {
-            let correct = false;
-            const next = state.sabio.next;
-            const current = state.sabio.current;
-
-            if (type === 'color') {
-                const isRed = ['♥️', '♦️'].includes(next.suit);
-                correct = (value === 'red' && isRed) || (value === 'black' && !isRed);
-            } else if (type === 'suit') {
-                correct = next.suit === value;
-            } else if (type === 'compare') {
-                const ranks = ['As', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-                const nextVal = ranks.indexOf(next.rank);
-                const currVal = ranks.indexOf(current.rank);
-                if (value === 'higher') correct = nextVal > currVal;
-                else correct = nextVal < currVal;
-            }
-
-            state.sabio.feedback = correct ? 'CORRECTO' : 'INCORRECTO';
-            if (correct) {
-                state.sabio.drinks--;
-                vibrate([50, 50, 50]); // Triple vibration for success
-                // If drinks became zero or negative, show confetti celebration
-                if (state.sabio.drinks <= 0) {
-                    setTimeout(createConfetti, 300);
-                }
-            } else {
-                state.sabio.drinks++;
-                vibrate(200); // Long vibration for wrong answer
-            }
-
-            saveState();
-            render();
-        }
-
-        function nextRoundSabio() {
-            state.sabio.current = state.sabio.next;
-            state.sabio.next = getRandomCard();
-            state.sabio.feedback = null;
-            state.sabio.questionType = ['color', 'suit', 'compare'][Math.floor(Math.random() * 3)];
-            saveState();
-            render();
-        }
-
         function filterLib() {
             const resultsContainer = document.getElementById('lib-results');
             const countContainer = document.getElementById('lib-count');
@@ -2466,8 +2399,7 @@
             }
 
 
-            checkAdminSession();
-            // Service Worker removido (sw.js eliminado)
+// Service Worker removido (sw.js eliminado)
         });
 
         // Initial render
@@ -2629,91 +2561,57 @@
             } catch(e) { console.warn('Supabase no disponible:', e); }
         }
 
+
         // ========================================
-        // ADMIN GATE — SHA-256
+        // SUPABASE AUTH
         // ========================================
-        const ADMIN_HASH = '1d3712aef3744721a276e2e693b819a7abde8c2252f35f267ff2f315e18232bb';
-        let pinBuffer = '';
-
-        async function hashString(str) {
-            const encoder = new TextEncoder();
-            const data = encoder.encode(str);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-            return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2,'0')).join('');
+        async function checkSession() {
+            if (!supabaseClient) return;
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            state.user = session ? session.user : null;
+            
+            supabaseClient.auth.onAuthStateChange((_event, session) => {
+                state.user = session ? session.user : null;
+                saveState();
+                render();
+            });
         }
 
-        function adminPinInput(digit) {
-            if (pinBuffer.length >= 8) return;
-            pinBuffer += digit;
-            updatePinDots();
-            if (pinBuffer.length === 8) setTimeout(adminPinSubmit, 200);
-        }
-
-        function adminPinClear() {
-            if (pinBuffer.length === 0) return;
-            pinBuffer = pinBuffer.slice(0, -1);
-            updatePinDots();
-        }
-
-        function updatePinDots() {
-            for (let i = 0; i < 8; i++) {
-                const dot = document.getElementById('pd' + i);
-                if (dot) dot.classList.toggle('filled', i < pinBuffer.length);
-            }
-        }
-
-        async function adminPinSubmit() {
-            if (!pinBuffer) return;
-            const hash = await hashString(pinBuffer);
-            if (hash === ADMIN_HASH) {
-                unlockAdmin();
+        async function signInWithSupabase() {
+            if (!supabaseClient) { showToast('⚠️ Sin conexión a Supabase'); return; }
+            const email = document.getElementById('auth-email').value.trim();
+            const password = document.getElementById('auth-password').value.trim();
+            if (!email || !password) { showToast('⚠️ Llená todos los campos'); return; }
+            
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            if (error) {
+                showToast('❌ Error: ' + error.message);
             } else {
-                showAdminError('PIN incorrecto');
-                const lockbox = document.getElementById('admin-numpad');
-                if (lockbox) { lockbox.classList.add('lock-shake'); setTimeout(() => lockbox.classList.remove('lock-shake'), 500); }
-                pinBuffer = '';
-                updatePinDots();
+                showToast('✅ Sesión iniciada');
+                changeView('menu');
             }
         }
 
-        async function adminTextSubmit() {
-            const input = document.getElementById('admin-text-input');
-            if (!input || !input.value) return;
-            const hash = await hashString(input.value.trim());
-            if (hash === ADMIN_HASH) {
-                unlockAdmin();
+        async function signUpWithSupabase() {
+            if (!supabaseClient) { showToast('⚠️ Sin conexión a Supabase'); return; }
+            const email = document.getElementById('auth-email').value.trim();
+            const password = document.getElementById('auth-password').value.trim();
+            if (!email || !password) { showToast('⚠️ Llená todos los campos'); return; }
+            
+            const { data, error } = await supabaseClient.auth.signUp({ email, password });
+            if (error) {
+                showToast('❌ Error: ' + error.message);
             } else {
-                showAdminError('Contraseña incorrecta ❌');
-                input.value = '';
-                const box = input.parentElement;
-                if (box) { box.classList.add('lock-shake'); setTimeout(() => box.classList.remove('lock-shake'), 500); }
+                showToast('✅ Cuenta creada. Por favor, iniciá sesión.');
             }
         }
 
-        function showAdminError(msg) {
-            const el = document.getElementById('admin-error-msg');
-            if (el) { el.textContent = msg; setTimeout(() => { if (el) el.textContent = ''; }, 2500); }
+        async function signOutSupabase() {
+            if (!supabaseClient) return;
+            await supabaseClient.auth.signOut();
+            showToast('👋 Sesión cerrada');
+            changeView('menu');
         }
-
-        function unlockAdmin() {
-            sessionStorage.setItem('ablm_unlocked', '1');
-            const ls = document.getElementById('admin-lockscreen');
-            if (ls) {
-                ls.classList.add('unlocking');
-                setTimeout(() => { ls.style.display = 'none'; }, 500);
-            }
-            initSupabase();
-            showToast('🔓 ¡Bienvenido Dengo!');
-        }
-
-        function checkAdminSession() {
-            if (sessionStorage.getItem('ablm_unlocked') === '1') {
-                const ls = document.getElementById('admin-lockscreen');
-                if (ls) ls.style.display = 'none';
-                initSupabase();
-            }
-        }
-
         // ========================================
         // LA ÚLTIMA CARTA — LÓGICA
         // ========================================
