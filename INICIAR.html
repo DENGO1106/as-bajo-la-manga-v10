@@ -663,6 +663,25 @@
         // Sin jugadores → setup siempre
         if (!savedState) state.view = 'welcome'; else if (state.players.length < 2) state.view = 'welcome';
 
+        let _inactivityWarningTimer = null;
+        let _inactivityExpireTimer = null;
+        const ROOM_INACTIVITY_MS = 20 * 60 * 1000; // 20 minutos
+        const ROOM_WARNING_MS   = 15 * 60 * 1000; // aviso a los 15 min
+
+        function resetInactivityTimers() {
+            clearTimeout(_inactivityWarningTimer);
+            clearTimeout(_inactivityExpireTimer);
+            _inactivityWarningTimer = setTimeout(() => {
+                if (state.roomCode) showToast('⚠️ La sala expira en 5 minutos por inactividad');
+            }, ROOM_WARNING_MS);
+            _inactivityExpireTimer = setTimeout(() => {
+                if (state.roomCode) {
+                    showToast('⏱️ Sala cerrada por inactividad');
+                    abandonarSala();
+                }
+            }, ROOM_INACTIVITY_MS);
+        }
+
         function saveState(isRemote = false) {
             if (state.user) {
                 localStorage.setItem('as_bajo_la_manga_state', JSON.stringify(state));
@@ -676,10 +695,12 @@
                 const stateToSync = { ...state };
                 delete stateToSync.user;
                 supabaseClient.from('rooms').update({
-                    game_state: stateToSync
+                    game_state: stateToSync,
+                    last_activity: new Date().toISOString()
                 }).eq('code', state.roomCode).then(({error}) => {
                     if (error) console.error("Supabase sync error:", error);
                 });
+                resetInactivityTimers();
             }
         }
 
@@ -2678,8 +2699,8 @@
             const code = Math.floor(100000 + Math.random() * 900000).toString();
             state.roomCode = code;
 
-            const expiresAt = new Date();
-            expiresAt.setHours(expiresAt.getHours() + 12);
+            const now = new Date();
+            const expiresAt = new Date(now.getTime() + ROOM_INACTIVITY_MS);
 
             const stateToSync = { ...state };
             delete stateToSync.user;
@@ -2687,7 +2708,8 @@
             const { error } = await supabaseClient.from('rooms').insert({
                 code: code,
                 game_state: stateToSync,
-                expires_at: expiresAt.toISOString()
+                expires_at: expiresAt.toISOString(),
+                last_activity: now.toISOString()
             });
 
             if (error) {
@@ -2697,6 +2719,7 @@
 
             saveState(true);
             conectarSala(code);
+            resetInactivityTimers();
             showToast('✅ Sala creada: ' + code);
             render();
         }
@@ -2737,29 +2760,43 @@
 
             const { data, error } = await supabaseClient
                 .from('rooms')
-                .select('game_state')
+                .select('game_state, last_activity')
                 .eq('code', code)
                 .single();
 
             if (error || !data) return showToast('❌ Sala no encontrada');
+
+            // Check inactivity — reject if last_activity > 20 min ago
+            if (data.last_activity) {
+                const lastActive = new Date(data.last_activity);
+                const diffMs = Date.now() - lastActive.getTime();
+                if (diffMs > ROOM_INACTIVITY_MS) {
+                    // Clean up expired room
+                    await supabaseClient.from('rooms').delete().eq('code', code);
+                    return showToast('⏱️ Sala expirada por inactividad');
+                }
+            }
 
             const localUser = state.user;
             state = { ...data.game_state, user: localUser };
             state.roomCode = code;
             saveState(true);
             conectarSala(code);
+            resetInactivityTimers();
             showToast('✅ Conectado a sala ' + code);
             render();
         }
 
-        function abandonarSala() {
+        function abandonarSala(expired = false) {
+            clearTimeout(_inactivityWarningTimer);
+            clearTimeout(_inactivityExpireTimer);
             if (realtimeChannel && supabaseClient) {
                 supabaseClient.removeChannel(realtimeChannel);
                 realtimeChannel = null;
             }
             state.roomCode = null;
             saveState();
-            showToast('🔌 Desconectado de la sala');
+            if (!expired) showToast('🔌 Desconectado de la sala');
             render();
         }
 
