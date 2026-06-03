@@ -14,7 +14,8 @@
     <meta name="apple-mobile-web-app-title" content="ABLM">
     <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🔥</text></svg>">
     
-    <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     
     <style>
@@ -371,6 +372,22 @@
             user-select: none;
         }
 
+
+        /* SUPABASE REALTIME CSS */
+        .pulse-border { animation: pulseBorder 2s infinite; }
+        @keyframes pulseBorder {
+            0% { border-color: rgba(245,158,11,0.2); }
+            50% { border-color: rgba(245,158,11,0.8); }
+            100% { border-color: rgba(245,158,11,0.2); }
+        }
+        .room-code-display {
+            font-family: monospace;
+            font-size: 3rem;
+            font-weight: 900;
+            letter-spacing: 0.2em;
+            color: #fbbf24;
+            text-shadow: 0 0 20px rgba(245,158,11,0.4);
+        }
         /* Prevent pull-to-refresh on mobile browsers */
         body {
             overscroll-behavior-y: contain;
@@ -379,6 +396,7 @@
 </head>
 
 <body class="min-h-screen flex flex-col">
+
 
     <!-- Header -->
     <header id="app-header" class="p-6 flex items-center justify-between sticky top-0 z-50 glass mb-4">
@@ -428,16 +446,6 @@
             pokerDeck: [],
             pokerIndex: -1,
 
-            // El Sabio
-            sabio: {
-                current: null,
-                next: null,
-                feedback: null,
-                mode: 'participante',
-                drinks: 0,
-                questionType: null
-            },
-
             // ¿Quién Es Más?
             quienEsMas: {
                 currentQuestion: null,
@@ -486,6 +494,10 @@
             trash: {
                 toxic: [], poker: [], sinexcusas: [], quienEsMas: [], bomba: [], cadena: [], dilema: [], mimica: []
             },
+            
+            // Supabase / Ultima Carta
+            roomState: null,
+            ultimaCarta: null,
 
             // Otros
             swipeDirection: null
@@ -616,19 +628,22 @@
             vibrate([50, 100, 50]);
         }
 
-        // Initialize state from localStorage
-        const savedState = localStorage.getItem('as_bajo_la_manga_state');
+        // Initialize state from storage (hybrid)
+        let savedState = null;
+        try {
+            const savedSession = sessionStorage.getItem('as_bajo_la_manga_state');
+            const savedLocal = localStorage.getItem('as_bajo_la_manga_state');
+            savedState = savedLocal || savedSession;
+        } catch (e) {
+            console.warn("Storage no disponible (posible webview o modo incógnito):", e);
+        }
         if (savedState) {
             try {
                 const parsed = JSON.parse(savedState);
-                // Restaurar estado EXCEPTO datos de jugadores (se resetean siempre)
                 const baseState = { ...state };
                 state = {
                     ...baseState,
-                    ...parsed,
-                    players: [],              // ✅ SIEMPRE vacío al recargar
-                    currentPlayerIndex: 0,    // ✅ SIEMPRE 0
-                    gameStarted: false        // ✅ SIEMPRE false
+                    ...parsed
                 };
                 
                 // Asegurar que las subpropiedades críticas no se pierdan al sobrescribir
@@ -641,8 +656,6 @@
                 if (state.toxicDeck.length === 0 && TOXIC_CARDS.length > 0) resetToxicDeck();
                 if (state.pokerDeck.length === 0 && POKER_CARDS.length > 0) resetPokerDeck();
                 if (!state.sinexcusas.deck || state.sinexcusas.deck.length === 0) resetSinExcusasDeck();
-                // Siempre redirigir a setup si no hay jugadores
-                state.view = 'setup';
             } catch (e) {
                 console.error("Error loading state", e);
                 resetAll();
@@ -650,11 +663,61 @@
         } else {
             resetAll();
         }
-        // Sin jugadores → setup siempre
-        if (state.players.length < 2) state.view = 'setup';
+        
+        // Limpiar vistas obsoletas que ya no existen (ej: el sabio del guaro)
+        const validViews = ['welcome','menu','setup','auth','profile','onlineRoom',
+            'toxic','poker','sinexcusas','sinexcusasSetup','quienEsMas','quienEsMasGame',
+            'bomba','retoCadena','dilemaRey','mimicaExpress','ultimaCarta','biblioteca'];
+        if (!validViews.includes(state.view)) {
+            console.warn('Vista guardada no es válida:', state.view, '-> welcome');
+            state.view = 'welcome';
+        }
 
-        function saveState() {
-            localStorage.setItem('as_bajo_la_manga_state', JSON.stringify(state));
+        // Ruteo inicial: si no hay estado previo o no hay jugadores listos
+        if (!savedState) {
+            state.view = 'welcome';
+        } else if (state.players.length < 2) {
+            state.view = 'welcome';
+        }
+
+        let _inactivityWarningTimer = null;
+        let _inactivityExpireTimer = null;
+        const ROOM_INACTIVITY_MS = 20 * 60 * 1000; // 20 minutos
+        const ROOM_WARNING_MS   = 15 * 60 * 1000; // aviso a los 15 min
+
+        function resetInactivityTimers() {
+            clearTimeout(_inactivityWarningTimer);
+            clearTimeout(_inactivityExpireTimer);
+            _inactivityWarningTimer = setTimeout(() => {
+                if (state.roomCode) showToast('⚠️ La sala expira en 5 minutos por inactividad');
+            }, ROOM_WARNING_MS);
+            _inactivityExpireTimer = setTimeout(() => {
+                if (state.roomCode) {
+                    showToast('⏱️ Sala cerrada por inactividad');
+                    abandonarSala();
+                }
+            }, ROOM_INACTIVITY_MS);
+        }
+
+        function saveState(isRemote = false) {
+            if (state.user) {
+                localStorage.setItem('as_bajo_la_manga_state', JSON.stringify(state));
+                sessionStorage.removeItem('as_bajo_la_manga_state');
+            } else {
+                sessionStorage.setItem('as_bajo_la_manga_state', JSON.stringify(state));
+                localStorage.removeItem('as_bajo_la_manga_state');
+            }
+            if (state.roomCode && !isRemote && window.supabaseClient) {
+                const stateToSync = { ...state };
+                delete stateToSync.user;
+                window.supabaseClient.from('rooms').update({
+                    game_state: stateToSync,
+                    last_activity: new Date().toISOString()
+                }).eq('code', state.roomCode).then(({error}) => {
+                    if (error) console.error("Supabase sync error:", error);
+                });
+                resetInactivityTimers();
+            }
         }
 
         // --- Utilidades ---
@@ -800,8 +863,141 @@
         // --- Render Functions ---
 
         const views = {
+            onlineRoom: () => `
+                <div class="space-y-6 animate-fade-in py-4">
+                    <div class="text-center space-y-2">
+                        <div style="font-size:3rem;">🌐</div>
+                        <h2 class="text-3xl font-black gradient-gold uppercase">Multijugador</h2>
+                        <p class="text-slate-400 text-sm">Sincroniza todos los juegos en vivo</p>
+                    </div>
+
+                    ${state.roomCode ? `
+                    <div class="glass p-6 rounded-3xl border border-emerald-500/20 text-center space-y-4 shadow-[0_0_20px_rgba(16,185,129,0.1)]">
+                        <p class="text-emerald-400 font-bold uppercase tracking-widest text-xs">Conectado a Sala</p>
+                        <div class="room-code-display text-5xl font-black tracking-[0.2em] text-emerald-400 drop-shadow-md">
+                            ${state.roomCode}
+                        </div>
+                        <p class="text-slate-400 text-sm">Cualquier juego que abras se sincronizará con todos los de esta sala al instante.</p>
+                        
+                        <div class="grid grid-cols-2 gap-3 mt-4">
+                            <button onclick="changeView('menu')" class="bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-3 rounded-xl font-bold touch-feedback ripple text-white">
+                                Jugar Ahora
+                            </button>
+                            <button onclick="abandonarSala()" class="bg-red-500/10 text-red-400 border border-red-500/30 px-4 py-3 rounded-xl font-bold touch-feedback ripple">
+                                Desconectar
+                            </button>
+                        </div>
+                    </div>
+                    ` : `
+                    <div class="glass p-6 rounded-3xl border border-white/10 space-y-6">
+                        <button onclick="crearSala()" class="w-full p-4 rounded-2xl font-black text-slate-950 text-lg uppercase shadow-xl touch-feedback ripple" style="background:linear-gradient(135deg,#10b981,#059669);">
+                            Crear Nueva Sala
+                        </button>
+                        
+                        <div class="relative flex items-center py-2">
+                            <div class="flex-grow border-t border-slate-700"></div>
+                            <span class="flex-shrink-0 mx-4 text-slate-500 text-sm font-bold uppercase">o únete a una</span>
+                            <div class="flex-grow border-t border-slate-700"></div>
+                        </div>
+
+                        <div class="flex gap-2">
+                            <input type="text" id="room-code-input" placeholder="Código de 6 dígitos" 
+                                   class="flex-1 bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-center font-mono tracking-widest text-lg"
+                                   maxlength="6">
+                            <button onclick="unirseSala()" class="glass bg-white/5 border border-white/10 px-6 py-3 rounded-xl font-bold touch-feedback ripple hover:bg-white/10 text-emerald-400">
+                                Entrar
+                            </button>
+                        </div>
+                    </div>
+                    `}
+                    
+                    <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-white touch-feedback mt-6">
+                        Volver al Menú
+                    </button>
+                </div>
+            `,
+            welcome: () => `
+                <div class="space-y-8 animate-fade-in py-8 flex flex-col items-center justify-center min-h-[70vh]">
+                    <div class="text-center space-y-4">
+                        <div style="font-size:4rem;" class="mb-4">🃏</div>
+                        <h1 class="text-4xl font-black gradient-gold uppercase tracking-tighter">As Bajo La Manga</h1>
+                        <p class="text-slate-400 text-lg">Elige cómo quieres entrar al juego</p>
+                    </div>
+
+                    <div class="w-full max-w-sm space-y-4">
+                        <button onclick="changeView('auth')" class="w-full p-4 rounded-2xl font-black text-slate-950 text-lg shadow-xl touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                            🔐 Iniciar con Cuenta
+                        </button>
+                        
+                        <div class="relative flex items-center py-2">
+                            <div class="flex-grow border-t border-slate-700"></div>
+                            <span class="flex-shrink-0 mx-4 text-slate-500 text-sm font-bold uppercase">o</span>
+                            <div class="flex-grow border-t border-slate-700"></div>
+                        </div>
+
+                        <button onclick="changeView('setup')" class="w-full glass p-4 rounded-2xl font-bold text-white border border-white/10 touch-feedback ripple">
+                            👤 Jugar como Invitado
+                        </button>
+                    </div>
+                </div>
+            `,
+
+            profile: () => `
+                <div class="space-y-6 animate-fade-in py-4">
+                    <div class="text-center space-y-2">
+                        <div style="font-size:3rem;">👤</div>
+                        <h2 class="text-3xl font-black gradient-gold uppercase">Mi Perfil</h2>
+                        <p class="text-slate-400 text-sm font-bold text-amber-400">@${state.user?.email?.split('@')[0] || 'usuario'}</p>
+                    </div>
+
+                    <div class="glass p-6 rounded-3xl border border-white/10 space-y-4">
+                        <h3 class="font-bold text-lg text-white mb-2">Mis Jugadores Frecuentes</h3>
+                        
+                        <div class="flex gap-2 mb-4">
+                            <input type="text" id="profilePlayerInput"
+                                   placeholder="Nombre del jugador"
+                                   class="flex-1 bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                   onkeypress="if(event.key==='Enter') addProfilePlayer()" />
+                            <button onclick="addProfilePlayer()" class="bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-3 rounded-xl font-bold touch-feedback ripple">➕</button>
+                        </div>
+
+                        <div class="space-y-2 max-h-[300px] overflow-y-auto">
+                            ${(state.user?.user_metadata?.saved_players || []).length === 0
+                                ? '<div class="text-center text-slate-500 py-4">No tienes jugadores guardados</div>'
+                                : (state.user?.user_metadata?.saved_players || []).map((p, i) => `
+                                <div class="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl">
+                                    <div class="flex items-center gap-3">
+                                        <span class="text-xl">${['🔵','🟢','🟡','🔴','🟣','🟠'][i % 6]}</span>
+                                        <span class="font-bold">${p.name}</span>
+                                    </div>
+                                    <button onclick="removeProfilePlayer(${i})" class="text-red-500 hover:text-red-400 px-3 py-1 rounded-lg touch-feedback">✕</button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <button onclick="startWithProfilePlayers()" class="w-full p-4 rounded-2xl font-black text-slate-950 touch-feedback ripple ${((state.user?.user_metadata?.saved_players || []).length >= 2) ? '' : 'opacity-50 pointer-events-none'}" style="background:linear-gradient(135deg,#10b981,#059669);">
+                            ▶️ Jugar con estos jugadores
+                        </button>
+
+                        <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-white touch-feedback">
+                            Volver al Menú
+                        </button>
+
+                        <button onclick="signOutSupabase()" class="w-full glass bg-red-500/10 text-red-400 border border-red-500/30 p-4 rounded-2xl font-bold touch-feedback ripple mt-4">
+                            Cerrar Sesión
+                        </button>
+                    </div>
+                </div>
+            `,
             menu: () => `
                 <div class="space-y-4 animate-fade-in py-4">
+
+                    <!-- Profile Button -->
+                    <button onclick="changeView(state.user ? 'profile' : 'welcome')" class="absolute top-4 right-4 glass p-2 rounded-xl text-xl touch-feedback border z-50 ${state.user ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' : 'border-amber-500/20 text-amber-400'}">
+                        ${state.user ? '👤' : '🔐'}
+                    </button>
                     <!-- Jugadores activos -->
                     <button onclick="changeView('setup')" class="w-full glass p-4 rounded-2xl flex items-center gap-4 border-white/10 btn-hover ripple touch-feedback">
                         <div class="flex gap-1">
@@ -813,6 +1009,17 @@
                             <p class="text-sm font-bold text-white">${(state.players || []).map(p => p.name).join(', ')}</p>
                         </div>
                         <span class="text-slate-500 text-sm">✏️</span>
+                    </button>
+
+                    <!-- Modo Multijugador Global -->
+                    <button onclick="changeView('onlineRoom')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-emerald-500/20 ripple touch-feedback mt-4 relative overflow-hidden">
+                        <div class="bg-emerald-500/20 p-4 rounded-2xl group-hover:bg-emerald-500/30 transition-colors">
+                            <span class="text-2xl">${state.roomCode ? '🟢' : '🌐'}</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold ${state.roomCode ? 'text-emerald-400' : 'text-emerald-500'}">SALA MULTIJUGADOR</h2>
+                            <p class="text-slate-400 text-sm">${state.roomCode ? 'Conectado: ' + state.roomCode : 'Sincroniza pantallas en vivo'}</p>
+                        </div>
                     </button>
 
                     <!-- Juegos de Cartas -->
@@ -850,16 +1057,6 @@
 
                     <!-- Juegos de Grupo Nuevos -->
                     <div class="text-sm uppercase tracking-widest text-slate-500 font-bold px-2 mt-8">👥 Juegos de Grupo</div>
-
-                    <button onclick="changeView('sabio')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-blue-500/20 ripple touch-feedback">
-                        <div class="bg-blue-500/20 p-4 rounded-2xl group-hover:bg-blue-500/30 transition-colors">
-                            <span class="text-2xl">🧙‍♂️</span>
-                        </div>
-                        <div class="text-left">
-                            <h2 class="text-lg font-bold text-blue-400">EL SABIO DEL GUARO</h2>
-                            <p class="text-slate-400 text-sm">Adivina la siguiente carta</p>
-                        </div>
-                    </button>
 
                     <button onclick="changeView('quienEsMas')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-amber-500/20 ripple touch-feedback">
                         <div class="bg-amber-500/20 p-4 rounded-2xl group-hover:bg-amber-500/30 transition-colors">
@@ -908,6 +1105,22 @@
                         <div class="text-left">
                             <h2 class="text-lg font-bold text-pink-400">MÍMICA EXPRESS</h2>
                             <p class="text-slate-400 text-sm">20 segundos para actuar</p>
+                        </div>
+                    </button>
+
+
+                    <!-- La Ultima Carta -->
+                    <button onclick="changeView('ultimaCarta')" class="game-card group touch-feedback relative overflow-hidden glass rounded-3xl p-6 border-amber-500/20">
+                        <div class="absolute -right-4 -top-4 text-6xl opacity-10 group-hover:rotate-12 transition-transform duration-500">🃏</div>
+                        <div class="flex items-center justify-between mb-4">
+                            <span class="text-4xl filter drop-shadow-[0_0_10px_rgba(245,158,11,0.5)]">🃏</span>
+                            <span class="bg-amber-500/20 text-amber-400 text-[10px] font-black px-3 py-1 rounded-full border border-amber-500/30 uppercase tracking-widest shadow-[0_0_10px_rgba(245,158,11,0.3)]">
+                                VIP
+                            </span>
+                        </div>
+                        <div class="text-left relative z-10">
+                            <h2 class="text-2xl font-black text-white mb-2 uppercase tracking-tight group-hover:text-amber-400 transition-colors">La Última Carta</h2>
+                            <p class="text-slate-400 text-sm font-medium leading-relaxed">El clásico juego de apuestas, ahora online y presencial.</p>
                         </div>
                     </button>
 
@@ -1658,6 +1871,437 @@
                     </div>
                 `;
             },
+
+
+            auth: () => `
+                <div class="space-y-6 animate-fade-in py-4">
+                    <div class="text-center space-y-2">
+                        <div style="font-size:3rem;">🔐</div>
+                        <h2 class="text-3xl font-black gradient-gold uppercase">Acceso VIP</h2>
+                        <p class="text-slate-400 text-sm">Iniciá sesión para desbloquear modos exclusivos</p>
+                    </div>
+
+                    ${state.user ? `
+                    <div class="glass p-6 rounded-3xl border border-amber-500/20 text-center space-y-4">
+                        <p class="text-emerald-400 font-bold">✅ Sesión Iniciada</p>
+                        <p class="text-slate-300 text-sm font-bold text-amber-400">@${state.user.email.split("@")[0]}</p>
+                        <button onclick="signOutSupabase()" class="w-full bg-red-500/20 text-red-400 border border-red-500/30 p-4 rounded-2xl font-black touch-feedback ripple">
+                            Cerrar Sesión
+                        </button>
+                    </div>
+                    ` : `
+                    <div class="glass p-6 rounded-3xl border border-amber-500/20 space-y-4">
+                        <input id="auth-username" type="text" placeholder="Nombre de usuario" autocomplete="off" 
+                               class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500">
+                        <input id="auth-password" type="password" placeholder="Contraseña" 
+                               class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500">
+                        
+                        <div class="grid grid-cols-2 gap-3 mt-4">
+                            <button onclick="signInWithSupabase()" class="p-4 rounded-2xl font-black text-slate-950 touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                                Iniciar Sesión
+                            </button>
+                            <button onclick="signUpWithSupabase()" class="glass p-4 rounded-2xl font-bold text-amber-400 border border-amber-500/20 touch-feedback ripple">
+                                Registrarse
+                            </button>
+                        </div>
+                    </div>
+                    `}
+                    <button onclick="changeView('welcome')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">← Volver</button>
+                </div>
+            `,
+            ultimaCarta: () => {
+                // Lobby de configuración inicial
+                if (!state.ultimaCarta || !state.ultimaCarta.active) {
+                    const players = state.players || [];
+                    return `
+                    <div class="space-y-6 animate-fade-in py-4">
+                        <div class="text-center space-y-2">
+                            <div style="font-size:4rem;" class="filter drop-shadow-[0_0_15px_rgba(245,158,11,0.5)]">🃏</div>
+                            <h2 class="text-3xl font-black gradient-gold uppercase">La Última Carta</h2>
+                            <p class="text-slate-400 text-sm">Torneo de apuestas y riesgo</p>
+                        </div>
+
+                        ${players.length < 2 ? `
+                        <div class="glass p-4 rounded-2xl border border-red-500/20 text-center">
+                            <p class="text-red-400 text-sm">⚠️ Necesitás al menos 2 jugadores</p>
+                            <button onclick="changeView('setup')" class="mt-3 bg-red-500/20 text-red-300 px-4 py-2 rounded-xl text-sm font-bold border border-red-500/30 touch-feedback">➕ Agregar jugadores</button>
+                        </div>
+                        ` : ''}
+
+                        <!-- Modos de juego -->
+                        ${players.length >= 2 ? `
+                        <div class="space-y-3">
+                            <button onclick="initUltimaCartaLocal()" class="w-full p-5 rounded-3xl font-black text-slate-950 text-lg uppercase card-shadow touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                                🎮 Jugar en Este Dispositivo
+                            </button>
+                            <button onclick="changeView('roomLobby')" class="w-full glass p-4 rounded-2xl font-bold text-amber-400 border border-amber-500/20 touch-feedback ripple flex items-center justify-center gap-2">
+                                📡 Crear / Unirse a Sala Online
+                            </button>
+                        </div>
+                        ` : ''}
+
+                        <button onclick="changeView('welcome')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">← Volver</button>
+                    </div>`;
+                }
+
+                // Juego activo
+                const uc = state.ultimaCarta;
+                const phase = uc.phase;
+                const player = uc.players[uc.currentPlayerIndex];
+                const stepNames = ['¿Par o Impar?','¿Mayor o Menor?','¿Rojo o Negro?','¿Palo?'];
+                const stepPoints = [1, 2, 3, 4];
+
+                // Marcador compacto
+                const scoreBoard = `
+                    <div class="glass p-3 rounded-2xl border border-white/5 mb-4">
+                        <div class="flex gap-2 overflow-x-auto pb-1">
+                            ${uc.players.map((pl,i) => `
+                                <div class="flex-shrink-0 text-center px-3 py-2 rounded-xl ${i === uc.currentPlayerIndex ? 'bg-amber-500/20 border border-amber-500/40' : 'bg-slate-800/50'}">
+                                    <p class="text-[10px] text-slate-400">${pl.name.substring(0,8)}</p>
+                                    <p class="font-black text-lg ${pl.score >= 0 ? 'text-emerald-400' : 'text-red-400'}">${pl.score >= 0 ? '+' : ''}${pl.score}</p>
+                                    <p class="text-[9px] text-slate-500">R${Math.min(pl.turnsPlayed + 1, 3)}/3</p>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>`;
+
+                if (phase === 'cobarde') {
+                    return `
+                    <div class="space-y-5 animate-fade-in py-4">
+                        ${scoreBoard}
+                        <div class="text-center space-y-1">
+                            <p class="text-xs text-amber-400 font-bold uppercase tracking-widest">Turno ${uc.currentRound}/${uc.totalRounds}</p>
+                            <h2 class="text-2xl font-black uppercase">${player.name}</h2>
+                        </div>
+                        <div class="glass p-8 rounded-3xl text-center space-y-6 border border-amber-500/20">
+                            <div style="font-size:3.5rem;">⚠️</div>
+                            <div>
+                                <h3 class="text-xl font-black text-amber-400 uppercase">Regla del Cobarde</h3>
+                                <p class="text-slate-400 mt-2 text-sm">Podés declarar "No juego" antes de que el Dealer tire la primera carta.</p>
+                                <p class="text-slate-300 mt-1 text-sm">Si no jugás: <span class="text-red-400 font-bold">1 trago</span> pero mantenés tu puntaje.</p>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <button onclick="ucCobarde()" class="glass p-4 rounded-2xl font-black text-red-400 border border-red-500/30 touch-feedback ripple">
+                                🏳️ No juego<br><span class="text-xs text-slate-400 font-normal">1 trago</span>
+                            </button>
+                            <button onclick="ucStartEscalera()" class="p-4 rounded-2xl font-black text-slate-950 touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                                ▶️ Jugar<br><span class="text-xs font-normal">Arriesgar</span>
+                            </button>
+                        </div>
+                    </div>`;
+                }
+
+                if (phase === 'escalera') {
+                    const step = uc.currentStep; // 0-3
+                    const card = uc.drawnCards[step];
+                    const prevCard = step > 0 ? uc.drawnCards[step - 1] : null;
+                    const isRed = card && ['♥', '♦'].includes(card.suit);
+
+                    if (!card) return `<div class="text-center py-8"><p>Error: carta no disponible</p></div>`;
+
+                    // Indicadores de pasos
+                    const stepDots = Array.from({length:4}, (_,i) => {
+                        let cls = 'step-dot';
+                        if (i < step) cls += ' done';
+                        else if (i === step) cls += ' active';
+                        return `<div class="${cls}"></div>`;
+                    }).join('');
+
+                    const cardDisplay = uc.revealed ? `
+                        <div class="card-reveal flex flex-col items-center justify-center gap-2">
+                            <span class="text-7xl font-black ${isRed ? 'card-suit-red' : 'card-suit-black'}">${card.rank}</span>
+                            <span class="text-5xl ${isRed ? 'card-suit-red' : 'card-suit-black'}">${card.suit}</span>
+                            ${step === 0 ? `<span class="text-sm text-slate-400 mt-1">${card.value % 2 === 0 ? 'Par ✓' : 'Impar ✓'}</span>` : ''}
+                        </div>
+                    ` : `
+                        <div class="flex flex-col items-center gap-2 opacity-60">
+                            <span class="text-7xl">🂠</span>
+                            <span class="text-slate-400 text-sm">Carta boca abajo</span>
+                        </div>
+                    `;
+
+                    // Botones según el paso y estado
+                    let actionButtons = '';
+                    if (!uc.revealed) {
+                        if (step === 0) { // Par/Impar
+                            actionButtons = `
+                            <div class="grid grid-cols-2 gap-3">
+                                <button onclick="ucGuess('par')" class="glass p-4 rounded-2xl font-black text-white border border-white/20 touch-feedback ripple text-lg">Par<br><span class="text-xs font-normal text-slate-400">2,4,6,8,10,Q</span></button>
+                                <button onclick="ucGuess('impar')" class="glass p-4 rounded-2xl font-black text-white border border-white/20 touch-feedback ripple text-lg">Impar<br><span class="text-xs font-normal text-slate-400">3,5,7,9,J,K</span></button>
+                            </div>`;
+                        } else if (step === 1) { // Mayor/Menor
+                            actionButtons = `
+                            <div class="space-y-2">
+                                <p class="text-center text-xs text-slate-400">Carta anterior: <span class="font-bold text-white">${prevCard.rank}${prevCard.suit}</span> (${prevCard.value})</p>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <button onclick="ucGuess('mayor')" class="glass p-4 rounded-2xl font-black text-white border border-white/20 touch-feedback ripple text-lg">Mayor ↑<br><span class="text-xs font-normal text-slate-400">&gt; ${prevCard.value}</span></button>
+                                    <button onclick="ucGuess('menor')" class="glass p-4 rounded-2xl font-black text-white border border-white/20 touch-feedback ripple text-lg">Menor ↓<br><span class="text-xs font-normal text-slate-400">&lt; ${prevCard.value}</span></button>
+                                </div>
+                            </div>`;
+                        } else if (step === 2) { // Rojo/Negro
+                            actionButtons = `
+                            <div class="grid grid-cols-2 gap-3">
+                                <button onclick="ucGuess('rojo')" class="glass p-4 rounded-2xl font-black text-red-400 border border-red-500/30 touch-feedback ripple text-lg">🔴 Rojo<br><span class="text-xs font-normal text-slate-400">♥ ♦</span></button>
+                                <button onclick="ucGuess('negro')" class="glass p-4 rounded-2xl font-black text-white border border-white/20 touch-feedback ripple text-lg">⚫ Negro<br><span class="text-xs font-normal text-slate-400">♠ ♣</span></button>
+                            </div>`;
+                        } else if (step === 3) { // Palo
+                            actionButtons = `
+                            <div class="grid grid-cols-2 gap-3">
+                                <button onclick="ucGuess('♠')" class="glass p-4 rounded-2xl font-black text-white border border-white/20 touch-feedback ripple">♠ Pica</button>
+                                <button onclick="ucGuess('♥')" class="glass p-4 rounded-2xl font-black text-red-400 border border-red-500/20 touch-feedback ripple">♥ Corazón</button>
+                                <button onclick="ucGuess('♦')" class="glass p-4 rounded-2xl font-black text-red-400 border border-red-500/20 touch-feedback ripple">♦ Diamante</button>
+                                <button onclick="ucGuess('♣')" class="glass p-4 rounded-2xl font-black text-white border border-white/20 touch-feedback ripple">♣ Trébol</button>
+                            </div>`;
+                        }
+                    } else if (uc.lastGuessCorrect) {
+                        // Adivinó correctamente
+                        actionButtons = step < 3 ? `
+                        <div class="space-y-3">
+                            <div class="bg-emerald-500/20 border border-emerald-500/40 rounded-2xl p-4 text-center">
+                                <p class="text-emerald-400 font-black text-lg">✅ ¡Correcto! +${stepPoints[step]} pto${stepPoints[step]>1?'s':''}</p>
+                                <p class="text-slate-400 text-xs mt-1">Tragos acumulados: ${uc.currentDrinks}</p>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <button onclick="ucPlantarse()" class="glass p-4 rounded-2xl font-bold text-slate-300 border border-white/10 touch-feedback ripple">
+                                    🛑 Plantarse<br><span class="text-xs font-normal text-slate-400">Guardar puntos</span>
+                                </button>
+                                <button onclick="ucContinuar()" class="p-4 rounded-2xl font-black text-slate-950 touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                                    ▶️ Continuar<br><span class="text-xs font-normal">+${stepPoints[step+1]} pts</span>
+                                </button>
+                            </div>
+                        </div>` : `
+                        <div class="space-y-3">
+                            <div class="bg-emerald-500/20 border border-emerald-500/40 rounded-2xl p-4 text-center">
+                                <p class="text-emerald-400 font-black text-xl">🏆 ¡Escalera Completa!</p>
+                                <p class="text-slate-300 mt-1">+${uc.currentPoints} puntos ganados</p>
+                                <p class="text-slate-400 text-xs">Tragos: ${uc.currentDrinks}</p>
+                            </div>
+                            <button onclick="ucFinalizarTurno(true)" class="w-full p-5 rounded-2xl font-black text-slate-950 text-lg touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                                Finalizar Turno ✓
+                            </button>
+                        </div>`;
+                    } else {
+                        // Falló
+                        actionButtons = step < 3 ? `
+                        <div class="space-y-3">
+                            <div class="bg-red-500/20 border border-red-500/40 rounded-2xl p-4 text-center">
+                                <p class="text-red-400 font-black text-lg">❌ ¡Incorrecto! +1 trago</p>
+                                <p class="text-slate-400 text-xs mt-1">Tragos acumulados: ${uc.currentDrinks}</p>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <button onclick="ucAceptarDerrota()" class="glass p-4 rounded-2xl font-bold text-red-400 border border-red-500/30 touch-feedback ripple">
+                                    🍺 Aceptar<br><span class="text-xs font-normal text-slate-400">${uc.currentDrinks} trago${uc.currentDrinks!==1?'s':''}</span>
+                                </button>
+                                <button onclick="ucRevancha()" class="p-4 rounded-2xl font-black text-slate-950 touch-feedback ripple" style="background:linear-gradient(135deg,#ef4444,#dc2626);">
+                                    ⚔️ Revancha<br><span class="text-xs font-normal">Carta ${step+2}</span>
+                                </button>
+                            </div>
+                        </div>` : `
+                        <div class="space-y-3">
+                            <div class="bg-red-500/20 border border-red-500/40 rounded-2xl p-4 text-center">
+                                <p class="text-red-400 font-black">❌ Carta 4 fallada — sin revancha</p>
+                                <p class="text-slate-300 mt-1">Tragos: ${uc.currentDrinks}</p>
+                            </div>
+                            <button onclick="ucAceptarDerrota()" class="w-full bg-red-600 p-4 rounded-2xl font-black text-white text-lg touch-feedback ripple">
+                                🍺 Aceptar derrota
+                            </button>
+                        </div>`;
+                    }
+
+                    return `
+                    <div class="space-y-4 animate-fade-in py-4">
+                        ${scoreBoard}
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-xs text-amber-400 font-bold uppercase tracking-widest">Carta ${step+1}/4 — ${stepNames[step]}</p>
+                                <h2 class="text-xl font-black uppercase">${player.name}</h2>
+                            </div>
+                            <div class="flex gap-1">${stepDots}</div>
+                        </div>
+                        <div class="glass p-8 rounded-3xl flex flex-col items-center justify-center min-h-[200px] border border-amber-500/20 relative overflow-hidden">
+                            <div class="absolute -top-8 -right-8 text-8xl opacity-5">🃏</div>
+                            <div class="text-center">${cardDisplay}</div>
+                            ${uc.revealed && uc.currentPoints > 0 ? `<div class="mt-4 bg-amber-500/10 px-4 py-2 rounded-xl border border-amber-500/20"><p class="text-amber-400 font-bold text-sm">Total turno: +${uc.currentPoints} pts</p></div>` : ''}
+                        </div>
+                        ${actionButtons}
+                    </div>`;
+                }
+
+                if (phase === 'revancha') {
+                    const card = uc.revanchaCard;
+                    const isRed = card && ['♥', '♦'].includes(card.suit);
+                    return `
+                    <div class="space-y-4 animate-fade-in py-4">
+                        ${scoreBoard}
+                        <div class="text-center space-y-1">
+                            <p class="text-xs text-red-400 font-bold uppercase tracking-widest">⚔️ REVANCHA — Carta ${uc.currentStep+2}</p>
+                            <h2 class="text-xl font-black uppercase">${player.name}</h2>
+                        </div>
+                        <div class="glass p-8 rounded-3xl border border-red-500/40 text-center space-y-2">
+                            <p class="text-slate-400 text-xs">Si ganás: cancela trago + <span class="text-emerald-400 font-bold">+${stepPoints[uc.currentStep-1] || 1} pts</span></p>
+                            <p class="text-slate-400 text-xs">Si perdés: <span class="text-red-400 font-bold">2 tragos + -${stepPoints[uc.currentStep-1] || 1} pts</span></p>
+                            ${card ? `
+                            <div class="card-reveal flex flex-col items-center gap-2 mt-4">
+                                <span class="text-7xl font-black ${isRed ? 'card-suit-red' : 'card-suit-black'}">${card.rank}</span>
+                                <span class="text-5xl ${isRed ? 'card-suit-red' : 'card-suit-black'}">${card.suit}</span>
+                            </div>
+                            ` : `<div class="text-6xl mt-4">🂠</div>`}
+                        </div>
+                        ${!card ? `
+                        <div class="grid grid-cols-2 gap-3">
+                            <button onclick="ucGuessRevancha('mayor')" class="glass p-4 rounded-2xl font-black touch-feedback">Mayor ↑</button>
+                            <button onclick="ucGuessRevancha('menor')" class="glass p-4 rounded-2xl font-black touch-feedback">Menor ↓</button>
+                        </div>` : `
+                        <button onclick="ucFinalizarTurno(${uc.lastRevanchaCorrect})" class="w-full p-4 rounded-2xl font-black text-slate-950 touch-feedback" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                            Continuar →
+                        </button>`}
+                    </div>`;
+                }
+
+                if (phase === 'final') {
+                    const sorted = [...uc.players].sort((a,b) => b.score - a.score);
+                    const winner = sorted[0];
+                    const loser = sorted[sorted.length-1];
+                    const isTie = sorted.filter(p => p.score === winner.score).length > 1;
+
+                    return `
+                    <div class="space-y-5 animate-fade-in py-4">
+                        <div class="text-center space-y-2">
+                            <div style="font-size:3rem;">🏆</div>
+                            <h2 class="text-3xl font-black gradient-gold uppercase">¡Fin del Torneo!</h2>
+                        </div>
+
+                        <!-- Podio -->
+                        <div class="space-y-3">
+                            ${sorted.map((pl, i) => {
+                                const isWinner = pl.score === winner.score;
+                                const isLoser = pl.score === loser.score && i === sorted.length-1;
+                                return `
+                                <div class="glass p-4 rounded-2xl flex items-center gap-4 border ${isWinner ? 'border-amber-500/40 bg-amber-500/5' : isLoser ? 'border-red-500/30 bg-red-500/5' : 'border-white/5'}">
+                                    <span class="text-2xl">${isWinner ? '🥇' : i===1 ? '🥈' : isLoser ? '💀' : '🥉'}</span>
+                                    <div class="flex-1">
+                                        <p class="font-black text-white">${pl.name}</p>
+                                        <p class="text-xs text-slate-400">Turno ${pl.turnsPlayed}/3 completados</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="font-black text-xl ${pl.score >= 0 ? 'text-emerald-400' : 'text-red-400'}">${pl.score >= 0 ? '+' : ''}${pl.score}</p>
+                                        <p class="text-xs text-slate-500">puntos</p>
+                                    </div>
+                                </div>`;
+                            }).join('')}
+                        </div>
+
+                        <!-- Premios/Castigos -->
+                        <div class="glass p-5 rounded-3xl border border-amber-500/20 space-y-3">
+                            <div class="bg-amber-500/10 rounded-2xl p-4 border border-amber-500/20">
+                                <p class="text-amber-400 font-black">🥇 ${winner.name} GANA</p>
+                                <p class="text-slate-300 text-sm">${isTie ? 'Empate: reparten' : 'Asigna'} 4 tragos entre los demás</p>
+                            </div>
+                            <div class="bg-red-500/10 rounded-2xl p-4 border border-red-500/20">
+                                <p class="text-red-400 font-black">💀 ${loser.name} PIERDE</p>
+                                <p class="text-slate-300 text-sm">Toma 1 trago de castigo</p>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <button onclick="initUltimaCartaLocal()" class="glass p-4 rounded-2xl font-bold text-amber-400 border border-amber-500/30 touch-feedback ripple">
+                                🔄 Revancha
+                            </button>
+                            <button onclick="changeView('menu')" class="glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                                🏠 Menú
+                            </button>
+                        </div>
+                    </div>`;
+                }
+
+                return `<div class="text-center py-8 text-slate-400">Cargando...</div>`;
+            },
+
+            roomLobby: () => {
+                const room = state.roomState;
+                if (!room || !room.code) {
+                    return `
+                    <div class="space-y-6 animate-fade-in py-4">
+                        <div class="text-center space-y-2">
+                            <div style="font-size:3rem;">📡</div>
+                            <h2 class="text-2xl font-black gradient-gold uppercase">Sala Online</h2>
+                            <p class="text-slate-400 text-sm">Jugá La Última Carta en tiempo real</p>
+                        </div>
+
+                        <div class="space-y-4">
+                            <!-- Crear sala -->
+                            <div class="glass p-6 rounded-3xl border border-amber-500/20 space-y-4">
+                                <h3 class="font-black text-amber-400 uppercase text-sm tracking-widest">Crear Nueva Sala</h3>
+                                <input id="host-name-input" type="text" placeholder="Tu nombre..."
+                                    class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                    value="${state.players && state.players[0] ? (state.players[0].name || '') : ''}" />
+                                <button onclick="createRoom()" class="w-full p-4 rounded-2xl font-black text-slate-950 text-lg touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                                    🚀 Crear Sala
+                                </button>
+                            </div>
+
+                            <!-- Unirse a sala -->
+                            <div class="glass p-6 rounded-3xl border border-white/10 space-y-4">
+                                <h3 class="font-black text-slate-300 uppercase text-sm tracking-widest">Unirse a Sala Existente</h3>
+                                <input id="room-code-input" type="text" placeholder="Código (ej: AS92)"
+                                    maxlength="4"
+                                    class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white text-center font-black text-xl uppercase focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                    oninput="this.value=this.value.toUpperCase()" />
+                                <input id="guest-name-input" type="text" placeholder="Tu nombre..."
+                                    class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                                <button onclick="joinRoom()" class="w-full p-4 rounded-2xl font-bold text-white bg-slate-700 hover:bg-slate-600 touch-feedback ripple">
+                                    🚪 Unirse
+                                </button>
+                            </div>
+                        </div>
+
+                        <button onclick="changeView('ultimaCarta')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">← Volver</button>
+                    </div>`;
+                }
+
+                // Sala creada/unida
+                const players = room.players || [];
+                const isHost = room.isHost;
+                return `
+                <div class="space-y-6 animate-fade-in py-4">
+                    <div class="text-center space-y-3">
+                        <p class="text-xs text-amber-400 font-bold uppercase tracking-widest">${isHost ? '👑 Sos el Anfitrión' : '🙋 Estás como Invitado'}</p>
+                        <div class="glass p-6 rounded-3xl border pulse-border">
+                            <p class="text-slate-400 text-xs mb-1">Código de Sala</p>
+                            <div class="room-code-display">${room.code}</div>
+                            <p class="text-slate-500 text-xs mt-1">Compartí este código</p>
+                        </div>
+                    </div>
+
+                    <div class="glass p-5 rounded-3xl border border-white/5">
+                        <p class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Jugadores en Sala (${players.length})</p>
+                        <div class="space-y-2">
+                            ${players.map((p,i) => `
+                                <div class="flex items-center gap-3 p-3 bg-slate-800/50 rounded-xl">
+                                    <span class="text-xl">${['🔵','🟢','🟡','🔴','🟣','🟠'][i%6]}</span>
+                                    <span class="font-bold">${p.name}</span>
+                                    ${i === 0 ? '<span class="ml-auto text-xs text-amber-400 font-bold">HOST</span>' : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    ${isHost ? `
+                    <button onclick="startOnlineGame()" class="w-full p-5 rounded-2xl font-black text-slate-950 text-lg touch-feedback ripple ${players.length < 2 ? 'opacity-50 pointer-events-none' : ''}" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                        ${players.length < 2 ? '⏳ Esperando jugadores...' : '▶️ Iniciar Partida'}
+                    </button>
+                    ` : `
+                    <div class="glass p-4 rounded-2xl border border-amber-500/20 text-center">
+                        <p class="text-amber-400 text-sm">⏳ Esperando que el host inicie la partida...</p>
+                    </div>
+                    `}
+
+                    <button onclick="leaveRoom()" class="w-full glass p-4 rounded-2xl font-bold text-red-400 border border-red-500/20 touch-feedback">
+                        🚪 Salir de la Sala
+                    </button>
+                </div>`;
+            },
         };
 
         function iniciarJuego(view = 'menu') {
@@ -1735,60 +2379,6 @@
                 showToast('🔄 Se barajó el mazo nuevamente');
             }
             state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
-            saveState();
-            render();
-        }
-
-        function initSabio() {
-            state.sabio.current = getRandomCard();
-            state.sabio.next = getRandomCard();
-            state.sabio.feedback = null;
-            state.sabio.drinks = 0;
-            state.sabio.questionType = ['color', 'suit', 'compare'][Math.floor(Math.random() * 3)];
-            saveState();
-            render();
-        }
-
-        function checkSabio(type, value) {
-            let correct = false;
-            const next = state.sabio.next;
-            const current = state.sabio.current;
-
-            if (type === 'color') {
-                const isRed = ['♥️', '♦️'].includes(next.suit);
-                correct = (value === 'red' && isRed) || (value === 'black' && !isRed);
-            } else if (type === 'suit') {
-                correct = next.suit === value;
-            } else if (type === 'compare') {
-                const ranks = ['As', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-                const nextVal = ranks.indexOf(next.rank);
-                const currVal = ranks.indexOf(current.rank);
-                if (value === 'higher') correct = nextVal > currVal;
-                else correct = nextVal < currVal;
-            }
-
-            state.sabio.feedback = correct ? 'CORRECTO' : 'INCORRECTO';
-            if (correct) {
-                state.sabio.drinks--;
-                vibrate([50, 50, 50]); // Triple vibration for success
-                // If drinks became zero or negative, show confetti celebration
-                if (state.sabio.drinks <= 0) {
-                    setTimeout(createConfetti, 300);
-                }
-            } else {
-                state.sabio.drinks++;
-                vibrate(200); // Long vibration for wrong answer
-            }
-
-            saveState();
-            render();
-        }
-
-        function nextRoundSabio() {
-            state.sabio.current = state.sabio.next;
-            state.sabio.next = getRandomCard();
-            state.sabio.feedback = null;
-            state.sabio.questionType = ['color', 'suit', 'compare'][Math.floor(Math.random() * 3)];
             saveState();
             render();
         }
@@ -1933,6 +2523,10 @@
 
             if (views[state.view]) {
                 container.innerHTML = views[state.view]();
+            } else {
+                console.warn('Vista desconocida:', state.view, '→ welcome');
+                state.view = 'welcome';
+                container.innerHTML = views.welcome();
             }
 
             // Add card flip animation on render
@@ -1952,7 +2546,8 @@
                 gameContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
             }
 
-            // Service Worker removido (sw.js eliminado)
+
+// Service Worker removido (sw.js eliminado)
         });
 
         // Initial render
@@ -2094,6 +2689,526 @@
             vibrate([100, 50, 100]);
             saveState();
             render();
+        }
+
+
+        // ========================================
+        // SUPABASE CONFIG
+        // ========================================
+        const SUPABASE_URL = 'https://lojhzzwrtyytjbdowayv.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxvamh6endydHl5dGpiZG93YXl2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0NTIzNDMsImV4cCI6MjA5NjAyODM0M30.ybGm52rGBCUd3KQTXJGwBFtXeFL_ac8_Grc8bR1wI2A';
+        let supabaseClient = null;
+        let realtimeChannel = null;
+
+        function initSupabase() {
+            try {
+                if (window.supabase) {
+                    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                    console.log('✅ Supabase conectado');
+                }
+            } catch(e) { console.warn('Supabase no disponible:', e); }
+        }
+
+
+        // ========================================
+        // SALAS GLOBALES — MULTIJUGADOR
+        // ========================================
+        async function crearSala() {
+            if (!supabaseClient) return showToast('⚠️ Sin conexión a internet');
+            const code = Math.floor(100000 + Math.random() * 900000).toString();
+            state.roomCode = code;
+            const now = new Date();
+            const expiresAt = new Date(now.getTime() + ROOM_INACTIVITY_MS);
+            const stateToSync = { ...state };
+            delete stateToSync.user;
+            const { error } = await supabaseClient.from('rooms').insert({
+                code, game_state: stateToSync,
+                expires_at: expiresAt.toISOString(),
+                last_activity: now.toISOString()
+            });
+            if (error) { state.roomCode = null; return showToast('❌ Error al crear sala: ' + error.message); }
+            saveState(true);
+            conectarSala(code);
+            resetInactivityTimers();
+            showToast('✅ Sala creada: ' + code);
+            render();
+        }
+
+        function conectarSala(code) {
+            if (realtimeChannel) { supabaseClient.removeChannel(realtimeChannel); realtimeChannel = null; }
+            realtimeChannel = supabaseClient.channel('room_' + code)
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `code=eq.${code}` }, (payload) => {
+                    const remoteState = payload.new.game_state;
+                    if (remoteState) {
+                        const localUser = state.user;
+                        state = { ...remoteState, user: localUser };
+                        saveState(true);
+                        render();
+                    }
+                })
+                .subscribe();
+        }
+
+        async function unirseSala() {
+            const input = document.getElementById('room-code-input');
+            const code = input?.value.trim();
+            if (!code || code.length !== 6) return showToast('✍️ Código de 6 dígitos');
+            if (!supabaseClient) return showToast('⚠️ Sin conexión');
+            const { data, error } = await supabaseClient.from('rooms').select('game_state, last_activity').eq('code', code).single();
+            if (error || !data) return showToast('❌ Sala no encontrada');
+            if (data.last_activity) {
+                const diffMs = Date.now() - new Date(data.last_activity).getTime();
+                if (diffMs > ROOM_INACTIVITY_MS) {
+                    await supabaseClient.from('rooms').delete().eq('code', code);
+                    return showToast('⏱️ Sala expirada por inactividad');
+                }
+            }
+            const localUser = state.user;
+            state = { ...data.game_state, user: localUser };
+            state.roomCode = code;
+            saveState(true);
+            conectarSala(code);
+            resetInactivityTimers();
+            showToast('✅ Conectado a sala ' + code);
+            render();
+        }
+
+        function abandonarSala() {
+            clearTimeout(_inactivityWarningTimer);
+            clearTimeout(_inactivityExpireTimer);
+            if (realtimeChannel && supabaseClient) { supabaseClient.removeChannel(realtimeChannel); realtimeChannel = null; }
+            state.roomCode = null;
+            saveState();
+            showToast('🔌 Desconectado de la sala');
+            render();
+        }
+
+        // ========================================
+        // SUPABASE AUTH
+        // ========================================
+        async function checkSession() {
+            if (!supabaseClient) return;
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            state.user = session ? session.user : null;
+            
+            if (state.user) {
+                const savedPlayers = state.user.user_metadata?.saved_players || [];
+                if (savedPlayers.length >= 2 && state.players.length < 2) {
+                    state.players = JSON.parse(JSON.stringify(savedPlayers));
+                    state.view = 'menu';
+                    saveState();
+                }
+            }
+            
+            supabaseClient.auth.onAuthStateChange((_event, session) => {
+                state.user = session ? session.user : null;
+                if (state.user && state.players.length < 2) {
+                    const savedPlayers = state.user.user_metadata?.saved_players || [];
+                    if (savedPlayers.length >= 2) {
+                        state.players = JSON.parse(JSON.stringify(savedPlayers));
+                        state.view = 'menu';
+                    }
+                }
+                saveState();
+                render();
+            });
+        }
+
+        async function updateProfilePlayers(playersArray) {
+            if (!supabaseClient || !state.user) return;
+            const { data, error } = await supabaseClient.auth.updateUser({
+                data: { saved_players: playersArray }
+            });
+            if (error) {
+                showToast('❌ Error guardando: ' + error.message);
+            } else {
+                state.user = data.user;
+                showToast('✅ Jugadores guardados en la nube');
+                saveState();
+                render();
+            }
+        }
+
+        function addProfilePlayer() {
+            const input = document.getElementById('profilePlayerInput');
+            const name = input?.value.trim();
+            if (!name) return showToast('✍️ Escribe un nombre');
+            const saved = state.user?.user_metadata?.saved_players || [];
+            if (saved.some(p => p.name.toLowerCase() === name.toLowerCase())) return showToast('⚠️ Ya existe');
+            if (saved.length >= 20) return showToast('⚠️ Máximo 20 jugadores');
+            saved.push({ name: name, score: 0 });
+            updateProfilePlayers(saved);
+        }
+
+        function removeProfilePlayer(index) {
+            const saved = state.user?.user_metadata?.saved_players || [];
+            saved.splice(index, 1);
+            updateProfilePlayers(saved);
+        }
+
+        function startWithProfilePlayers() {
+            const saved = state.user?.user_metadata?.saved_players || [];
+            if (saved.length < 2) return showToast('⚠️ Necesitas al menos 2 jugadores');
+            state.players = JSON.parse(JSON.stringify(saved));
+            state.view = 'menu';
+            saveState();
+            render();
+        }
+
+        async function signInWithSupabase() {
+            if (!supabaseClient) { showToast('⚠️ Sin conexión a Supabase'); return; }
+            const usernameRaw = document.getElementById('auth-username').value.trim();
+            const username = usernameRaw.toLowerCase().replace(/\s+/g, '');
+            const email = username + '@asbajolamanga.com';
+            const password = document.getElementById('auth-password').value.trim();
+            if (!username || !password) { showToast('⚠️ Llená todos los campos'); return; }
+            
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            if (error) {
+                showToast('❌ Error: ' + error.message);
+            } else {
+                showToast('✅ Sesión iniciada');
+                changeView('menu');
+            }
+        }
+
+        async function signUpWithSupabase() {
+            if (!supabaseClient) { showToast('⚠️ Sin conexión a Supabase'); return; }
+            const usernameRaw = document.getElementById('auth-username').value.trim();
+            const username = usernameRaw.toLowerCase().replace(/\s+/g, '');
+            const email = username + '@asbajolamanga.com';
+            const password = document.getElementById('auth-password').value.trim();
+            if (!username || !password) { showToast('⚠️ Llená todos los campos'); return; }
+            
+            const { data, error } = await supabaseClient.auth.signUp({ email, password });
+            if (error) {
+                showToast('❌ Error: ' + error.message);
+            } else {
+                showToast('✅ Cuenta creada. Por favor, iniciá sesión.');
+            }
+        }
+
+        async function signOutSupabase() {
+            if (!supabaseClient) return;
+            await supabaseClient.auth.signOut();
+            localStorage.removeItem('as_bajo_la_manga_state');
+            sessionStorage.removeItem('as_bajo_la_manga_state');
+            showToast('👋 Sesión cerrada, reiniciando...');
+            setTimeout(() => window.location.reload(), 1000);
+        }
+        // ========================================
+        // LA ÚLTIMA CARTA — LÓGICA
+        // ========================================
+        function buildDeck() {
+            const ranks = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+            const values = {'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,'J':11,'Q':12,'K':13,'A':14};
+            const suits = ['♠','♥','♦','♣'];
+            const deck = [];
+            for (const suit of suits) {
+                for (const rank of ranks) {
+                    deck.push({ rank, suit, value: values[rank] });
+                }
+            }
+            for (let i = deck.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [deck[i], deck[j]] = [deck[j], deck[i]];
+            }
+            return deck;
+        }
+
+        function initUltimaCartaLocal() {
+            const players = (state.players || []).map(p => ({
+                name: p.name || p,
+                score: 0,
+                turnsPlayed: 0
+            }));
+            if (players.length < 2) { showToast('⚠️ Mínimo 2 jugadores'); changeView('setup'); return; }
+
+            state.ultimaCarta = {
+                active: true,
+                players,
+                currentPlayerIndex: 0,
+                deck: buildDeck(),
+                deckIndex: 0,
+                totalRounds: 3 * players.length,
+                currentRound: 1,
+                phase: 'cobarde',
+                currentStep: 0,
+                currentPoints: 0,
+                currentDrinks: 0,
+                drawnCards: [],
+                revealed: false,
+                lastGuessCorrect: false,
+                revanchaCard: null,
+                lastRevanchaCorrect: false,
+            };
+            saveState();
+            changeView('ultimaCarta');
+        }
+
+        function ucDrawCard() {
+            const uc = state.ultimaCarta;
+            if (uc.deckIndex >= uc.deck.length) {
+                uc.deck = buildDeck();
+                uc.deckIndex = 0;
+            }
+            return uc.deck[uc.deckIndex++];
+        }
+
+        function ucCobarde() {
+            showToast('🏳️ Cobarde — 1 trago');
+            vibrate([50,50,100]);
+            ucAdvancePlayer();
+        }
+
+        function ucStartEscalera() {
+            const uc = state.ultimaCarta;
+            uc.phase = 'escalera';
+            uc.currentStep = 0;
+            uc.currentPoints = 0;
+            uc.currentDrinks = 0;
+            uc.revealed = false;
+            uc.drawnCards = [ucDrawCard(), ucDrawCard(), ucDrawCard(), ucDrawCard()];
+            saveState();
+            render();
+        }
+
+        function ucGuess(guess) {
+            const uc = state.ultimaCarta;
+            const card = uc.drawnCards[uc.currentStep];
+            const step = uc.currentStep;
+            let correct = false;
+
+            if (step === 0) {
+                const isPar = card.value % 2 === 0;
+                correct = (guess === 'par' && isPar) || (guess === 'impar' && !isPar);
+            } else if (step === 1) {
+                const prev = uc.drawnCards[step - 1];
+                correct = (guess === 'mayor' && card.value > prev.value) || (guess === 'menor' && card.value < prev.value);
+                if (card.value === prev.value) correct = false;
+            } else if (step === 2) {
+                const isRed = ['♥','♦'].includes(card.suit);
+                correct = (guess === 'rojo' && isRed) || (guess === 'negro' && !isRed);
+            } else if (step === 3) {
+                correct = guess === card.suit;
+            }
+
+            uc.revealed = true;
+            uc.lastGuessCorrect = correct;
+
+            if (correct) {
+                uc.currentPoints += [1,2,3,4][step];
+                if (uc.currentDrinks > 0) uc.currentDrinks = Math.max(0, uc.currentDrinks - 1);
+                vibrate(100);
+            } else {
+                uc.currentDrinks++;
+                vibrate([50,100]);
+            }
+
+            saveState();
+            render();
+        }
+
+        function ucPlantarse() {
+            ucFinalizarTurno(true);
+        }
+
+        function ucContinuar() {
+            const uc = state.ultimaCarta;
+            uc.currentStep++;
+            uc.revealed = false;
+            uc.lastGuessCorrect = false;
+            saveState();
+            render();
+        }
+
+        function ucAceptarDerrota() {
+            ucFinalizarTurno(false);
+        }
+
+        function ucRevancha() {
+            const uc = state.ultimaCarta;
+            uc.phase = 'revancha';
+            uc.revanchaCard = null;
+            saveState();
+            render();
+        }
+
+        function ucGuessRevancha(guess) {
+            const uc = state.ultimaCarta;
+            const card = ucDrawCard();
+            uc.revanchaCard = card;
+            const prevCard = uc.drawnCards[uc.currentStep];
+            const correct = (guess === 'mayor' && card.value > prevCard.value) || (guess === 'menor' && card.value < prevCard.value);
+            uc.lastRevanchaCorrect = correct;
+
+            const prevPoints = [1,2,3,4][uc.currentStep - 1] || 1;
+
+            if (correct) {
+                uc.currentDrinks = Math.max(0, uc.currentDrinks - 1);
+                uc.currentPoints += prevPoints;
+                vibrate([100,50,100]);
+            } else {
+                uc.currentDrinks++;
+                uc.currentPoints -= prevPoints;
+                vibrate([200]);
+            }
+
+            saveState();
+            render();
+        }
+
+        function ucFinalizarTurno(won) {
+            const uc = state.ultimaCarta;
+            const player = uc.players[uc.currentPlayerIndex];
+
+            if (won && uc.currentPoints > 0) {
+                player.score += uc.currentPoints;
+            } else if (!won && uc.phase === 'revancha' && !uc.lastRevanchaCorrect) {
+                if (uc.currentPoints < 0) player.score += uc.currentPoints;
+            }
+
+            player.turnsPlayed++;
+
+            const allDone = uc.players.every(p => p.turnsPlayed >= 3);
+            if (allDone) {
+                uc.phase = 'final';
+                vibrate([100,50,100,50,200]);
+                saveState();
+                render();
+                return;
+            }
+
+            ucAdvancePlayer();
+        }
+
+        function ucAdvancePlayer() {
+            const uc = state.ultimaCarta;
+            let nextIdx = (uc.currentPlayerIndex + 1) % uc.players.length;
+            let attempts = 0;
+            while (uc.players[nextIdx].turnsPlayed >= 3 && attempts < uc.players.length) {
+                nextIdx = (nextIdx + 1) % uc.players.length;
+                attempts++;
+            }
+            uc.currentPlayerIndex = nextIdx;
+            uc.currentRound++;
+            uc.phase = 'cobarde';
+            uc.currentStep = 0;
+            uc.currentPoints = 0;
+            uc.currentDrinks = 0;
+            uc.drawnCards = [];
+            uc.revealed = false;
+            saveState();
+            render();
+        }
+
+        // ========================================
+        // SUPABASE ROOMS
+        // ========================================
+        function genRoomCode() {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            return Array.from({length:4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+        }
+
+        async function createRoom() {
+            if (!supabaseClient) { showToast('⚠️ Sin conexión a Supabase'); return; }
+            const nameInput = document.getElementById('host-name-input');
+            const hostName = nameInput ? nameInput.value.trim() : '';
+            if (!hostName) { showToast('✍️ Ingresá tu nombre'); return; }
+
+            const code = genRoomCode();
+            const gameState = { status: 'waiting', players: [{ name: hostName }] };
+
+            try {
+                const { error } = await supabaseClient.from('rooms').insert({
+                    code,
+                    game_state: gameState,
+                    expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString()
+                });
+                if (error) { showToast('❌ Error: ' + error.message); return; }
+
+                state.roomState = { code, isHost: true, hostName, players: [{ name: hostName }] };
+                if (!state.players) state.players = [];
+                state.players = [{ name: hostName }];
+                saveState();
+                subscribeToRoom(code);
+                render();
+            } catch(e) { showToast('❌ ' + e.message); }
+        }
+
+        async function joinRoom() {
+            if (!supabaseClient) { showToast('⚠️ Sin conexión a Supabase'); return; }
+            const codeInput = document.getElementById('room-code-input');
+            const nameInput = document.getElementById('guest-name-input');
+            const code = codeInput ? codeInput.value.trim().toUpperCase() : '';
+            const guestName = nameInput ? nameInput.value.trim() : '';
+            if (!code || code.length !== 4) { showToast('⚠️ Código de 4 letras'); return; }
+            if (!guestName) { showToast('✍️ Ingresá tu nombre'); return; }
+
+            try {
+                const { data, error } = await supabaseClient.from('rooms').select('*').eq('code', code).single();
+                if (error || !data) { showToast('❌ Sala no encontrada'); return; }
+
+                const gs = data.game_state;
+                if (gs.status !== 'waiting') { showToast('⚠️ La partida ya comenzó'); return; }
+
+                const updatedPlayers = [...(gs.players || []), { name: guestName }];
+                await supabaseClient.from('rooms').update({ game_state: { ...gs, players: updatedPlayers } }).eq('code', code);
+
+                state.roomState = { code, isHost: false, guestName, players: updatedPlayers };
+                saveState();
+                subscribeToRoom(code);
+                render();
+            } catch(e) { showToast('❌ ' + e.message); }
+        }
+
+        function subscribeToRoom(code) {
+            if (!supabaseClient) return;
+            if (realtimeChannel) realtimeChannel.unsubscribe();
+
+            realtimeChannel = supabaseClient.channel('room:' + code)
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: 'code=eq.' + code },
+                payload => {
+                    const gs = payload.new.game_state;
+                    if (state.roomState && gs) {
+                        state.roomState.players = gs.players;
+                        if (gs.status === 'playing') {
+                            state.ultimaCarta = gs.ultimaCarta;
+                            state.view = 'ultimaCarta';
+                        }
+                        saveState();
+                        render();
+                    }
+                }).subscribe();
+        }
+
+        async function startOnlineGame() {
+            if (!supabaseClient || !state.roomState) return;
+            const code = state.roomState.code;
+            
+            // Build initial UC state
+            const players = state.roomState.players.map(p => ({
+                name: p.name, score: 0, turnsPlayed: 0
+            }));
+            const uc = {
+                active: true, players, currentPlayerIndex: 0,
+                deck: buildDeck(), deckIndex: 0,
+                totalRounds: 3 * players.length, currentRound: 1,
+                phase: 'cobarde', currentStep: 0, currentPoints: 0, currentDrinks: 0,
+                drawnCards: [], revealed: false, lastGuessCorrect: false,
+                revanchaCard: null, lastRevanchaCorrect: false,
+                isOnline: true
+            };
+            
+            const gs = { status: 'playing', players: state.roomState.players, ultimaCarta: uc };
+            await supabaseClient.from('rooms').update({ game_state: gs }).eq('code', code);
+        }
+
+        function leaveRoom() {
+            state.roomState = null;
+            if (realtimeChannel) { realtimeChannel.unsubscribe(); realtimeChannel = null; }
+            saveState();
+            changeView('ultimaCarta');
         }
 
         function reiniciarRetoCadena() {
@@ -2304,6 +3419,11 @@
                 modal.classList.remove('hidden');
             }
         }
+
+        // Initialize Supabase now that consts are defined
+        initSupabase();
+        checkSession();
+        if (state.roomCode) { conectarSala(state.roomCode); }
     </script>
 </body>
 
