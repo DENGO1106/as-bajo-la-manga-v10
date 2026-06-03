@@ -2543,8 +2543,7 @@
 // Service Worker removido (sw.js eliminado)
         });
 
-        // Initial render
-        render();
+        // render() is called after checkSession() resolves (bottom of script)
 
         // ========================================
         // GESTIÓN DE JUGADORES
@@ -3451,10 +3450,13 @@
 
         // Initialize Supabase now that consts are defined
         initSupabase();
-        checkSession();
-        if (state.roomCode) {
-            conectarSala(state.roomCode);
-        }
+        // checkSession is async - it will call render() when done
+        checkSession().then(() => {
+            render();
+            if (state.roomCode) {
+                conectarSala(state.roomCode);
+            }
+        });
     </script>
 </body>
 
