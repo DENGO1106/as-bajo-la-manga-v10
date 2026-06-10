@@ -754,13 +754,23 @@
                 sessionStorage.setItem('as_bajo_la_manga_state', JSON.stringify(state));
                 localStorage.removeItem('as_bajo_la_manga_state');
             }
-            if (state.roomCode && !isRemote && window.supabaseClient) {
-                const stateToSync = { ...state };
-                delete stateToSync.user;
+
+            // BUG FIX #2: usar roomCode O roomState.code (el que esté disponible)
+            const activeRoomCode = state.roomCode || state.roomState?.code;
+            if (activeRoomCode && !isRemote && window.supabaseClient) {
+                // BUG FIX #3: subir full_state con TODO el estado del juego
+                const fullState = { ...state };
+                delete fullState.user;
+                delete fullState.roomState; // no sincronizar identidad del dispositivo
+
                 window.supabaseClient.from('rooms').update({
-                    game_state: stateToSync,
+                    game_state: {
+                        status: 'playing',
+                        players: state.players,
+                        full_state: fullState
+                    },
                     last_activity: new Date().toISOString()
-                }).eq('code', state.roomCode).then(({error}) => {
+                }).eq('code', activeRoomCode).then(({error}) => {
                     if (error) console.error("Supabase sync error:", error);
                 });
                 resetInactivityTimers();
@@ -2679,6 +2689,12 @@
             if (state.players.some(p => p.name === name)) return showToast('❌ Ya existe ese nombre');
 
             state.players.push({ name });
+
+            // BUG FIX #1: el PRIMER jugador siempre es el dueño del dispositivo
+            if (state.players.length === 1) {
+                localStorage.setItem('localPlayerName', name);
+            }
+
             input.value = '';
             vibrate(30);
             render();
@@ -3239,12 +3255,15 @@
                 });
                 if (error) { showToast('❌ Error: ' + error.message); return; }
 
+                // BUG FIX #1: guardar identidad del dispositivo
                 localStorage.setItem('localPlayerName', hostName);
+                // BUG FIX #2: asignar state.roomCode para que saveState() sincronice
+                state.roomCode = code;
                 state.roomState = { code, isHost: true, hostName, players: [{ name: hostName }] };
-                if (!state.players) state.players = [];
                 state.players = [{ name: hostName }];
-                saveState();
+                state.currentPlayerIndex = 0;
                 subscribeToRoom(code);
+                saveState(true); // guardar local sin subir (la sala ya existe recién creada)
                 render();
             } catch(e) { showToast('❌ ' + e.message); }
         }
@@ -3263,15 +3282,28 @@
                 if (error || !data) { showToast('❌ Sala no encontrada'); return; }
 
                 const gs = data.game_state;
-                if (gs.status !== 'waiting') { showToast('⚠️ La partida ya comenzó'); return; }
-
+                // Permitir unirse aunque ya haya comenzado (para reconexiones)
                 const updatedPlayers = [...(gs.players || []), { name: guestName }];
-                await supabaseClient.from('rooms').update({ game_state: { ...gs, players: updatedPlayers } }).eq('code', code);
+                // Evitar duplicar nombre si ya está en la lista (reconexión)
+                const alreadyIn = gs.players?.some(p => p.name === guestName);
+                const finalPlayers = alreadyIn ? gs.players : updatedPlayers;
 
+                if (!alreadyIn) {
+                    await supabaseClient.from('rooms').update({
+                        game_state: { ...gs, players: finalPlayers }
+                    }).eq('code', code);
+                }
+
+                // BUG FIX #1: guardar identidad del dispositivo
                 localStorage.setItem('localPlayerName', guestName);
-                state.roomState = { code, isHost: false, guestName, players: updatedPlayers };
-                saveState();
+                // BUG FIX #2: asignar state.roomCode
+                state.roomCode = code;
+                state.roomState = { code, isHost: false, guestName, players: finalPlayers };
+                state.players = finalPlayers;
+                state.currentPlayerIndex = gs.full_state?.currentPlayerIndex ?? 0;
+
                 subscribeToRoom(code);
+                saveState(true);
                 render();
             } catch(e) { showToast('❌ ' + e.message); }
         }
@@ -3284,28 +3316,61 @@
                 .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: 'code=eq.' + code },
                 payload => {
                     const gs = payload.new.game_state;
-                    if (state.roomState && gs) {
+                    if (!gs) return;
+
+                    // BUG FIX #3: Reconstruir estado completo preservando identidad del dispositivo
+                    const savedRoomState = state.roomState; // identidad local (isHost, mi nombre, etc.)
+                    const savedRoomCode  = state.roomCode;
+
+                    if (gs.full_state) {
+                        // Hay estado completo de juego: fusionar todo
+                        Object.assign(state, gs.full_state);
+                    } else if (gs.players) {
+                        // Solo hay lista de jugadores (sala en espera)
+                        if (!state.roomState) state.roomState = savedRoomState || {};
                         state.roomState.players = gs.players;
-                        if (gs.status === 'playing') {
-                            // Actualizar el estado global con lo que viene de supabase
-                            Object.assign(state, gs.full_state);
+                        if (!state.players || state.players.length === 0) {
+                            state.players = gs.players;
                         }
-                        saveState();
-                        render();
                     }
+
+                    // Restaurar identidad del dispositivo (nunca se sobreescribe con datos remotos)
+                    state.roomState = savedRoomState;
+                    state.roomCode  = savedRoomCode || code;
+
+                    // Guardar localmente SIN volver a subir a Supabase (evitar loop)
+                    saveState(true);
+                    render();
                 }).subscribe();
         }
 
         async function startOnlineGame() {
             if (!supabaseClient || !state.roomState) return;
             const code = state.roomState.code;
-            
-            // Asignar los jugadores de la sala al estado global
+
+            // Asignar los jugadores de la sala al estado local y navegar al menú
             state.players = state.roomState.players;
-            state.view = 'menu'; // Mover a todos al menú para elegir juego
-            
-            const gs = { status: 'playing', players: state.roomState.players, full_state: { view: state.view, players: state.players } };
-            await supabaseClient.from('rooms').update({ game_state: gs }).eq('code', code);
+            state.currentPlayerIndex = 0;
+            state.view = 'menu';
+            state.roomCode = code; // Asegurar roomCode
+
+            // BUG FIX #3: subir el full_state completo para que todos los dispositivos
+            // reciban el estado y naveguen al menú automáticamente
+            const fullState = { ...state };
+            delete fullState.user;
+            delete fullState.roomState;
+
+            const gs = {
+                status: 'playing',
+                players: state.players,
+                full_state: fullState
+            };
+            const { error } = await supabaseClient.from('rooms').update({ game_state: gs }).eq('code', code);
+            if (error) { showToast('❌ Error al iniciar: ' + error.message); return; }
+
+            // Guardar localmente (sin re-subir)
+            saveState(true);
+            render();
         }
 
         function leaveRoom() {
