@@ -541,6 +541,8 @@
             trash: {
                 toxic: [], poker: [], sinexcusas: [], quienEsMas: [], bomba: [], cadena: [], dilema: [], mimica: []
             },
+            // Favoritos (⭐)
+            favorites: { toxic: [], poker: [] },
             
             // Supabase / Ultima Carta
             roomState: null,
@@ -982,12 +984,29 @@
                 </div>
             `,
 
-            profile: () => `
+            profile: () => {
+                const nickname = state.user?.user_metadata?.game_nickname || '';
+                return `
                 <div class="space-y-6 animate-fade-in py-4">
                     <div class="text-center space-y-2">
                         <div style="font-size:3rem;">👤</div>
                         <h2 class="text-3xl font-black gradient-gold uppercase">Mi Perfil</h2>
-                        <p class="text-slate-400 text-sm font-bold text-amber-400">@${state.user?.email?.split('@')[0] || 'usuario'}</p>
+                        <p class="text-slate-400 text-sm">@${state.user?.email?.split('@')[0] || 'usuario'}</p>
+                    </div>
+
+                    <!-- Apodo de juego -->
+                    <div class="glass p-6 rounded-3xl border border-amber-500/20 space-y-3">
+                        <h3 class="font-black text-amber-400 uppercase text-sm tracking-widest">🎮 Apodo para Jugar</h3>
+                        <p class="text-slate-400 text-xs">Este nombre se usará automáticamente cuando juegues en salas online.</p>
+                        <div class="flex gap-2">
+                            <input type="text" id="nicknameInput"
+                                   placeholder="Tu apodo de juego..."
+                                   value="${nickname}"
+                                   maxlength="20"
+                                   class="flex-1 bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500 font-bold" />
+                            <button onclick="saveGameNickname()" class="bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-3 rounded-xl font-bold touch-feedback ripple">💾</button>
+                        </div>
+                        ${nickname ? `<p class="text-emerald-400 text-xs font-bold">✅ Apodo activo: "${nickname}"</p>` : ''}
                     </div>
 
                     <div class="glass p-6 rounded-3xl border border-white/10 space-y-4">
@@ -1029,9 +1048,29 @@
                             Cerrar Sesión
                         </button>
                     </div>
-                </div>
-            `,
-            menu: () => `
+                </div>`;
+            },
+            menu: () => {
+                // Si hay sala online y soy invitado → pantalla de espera
+                if (state.roomState?.code && !state.roomState?.isHost) {
+                    return `
+                    <div class="flex flex-col items-center justify-center min-h-[70vh] space-y-6 animate-fade-in py-8">
+                        <div class="glass p-10 rounded-3xl border border-amber-500/20 text-center space-y-5 w-full">
+                            <div class="text-6xl animate-bounce">👑</div>
+                            <h2 class="text-2xl font-black gradient-gold uppercase">El Host está decidiendo</h2>
+                            <p class="text-slate-400">Esperá mientras <span class="text-amber-400 font-bold">${state.roomState.players?.[0]?.name || 'el anfitrión'}</span> selecciona el juego...</p>
+                            <div class="flex justify-center gap-2 pt-2">
+                                <span class="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style="animation-delay:0ms"></span>
+                                <span class="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style="animation-delay:150ms"></span>
+                                <span class="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style="animation-delay:300ms"></span>
+                            </div>
+                        </div>
+                        <button onclick="leaveRoom()" class="w-full glass p-4 rounded-2xl font-bold text-red-400 border border-red-500/20 touch-feedback">
+                            🚪 Salir de la Sala
+                        </button>
+                    </div>`;
+                }
+                return `
                 <div class="space-y-4 animate-fade-in py-4">
 
                     <!-- Profile Button -->
@@ -1651,7 +1690,7 @@
                 const tabs = [
                     { id: 'toxic', label: '🔥 TOXIC' },
                     { id: 'poker', label: '🃏 POKER' },
-                    
+                    { id: 'favoritos', label: '⭐ FAVORITOS' },
                     { id: 'quienEsMas', label: '🏆 QUIÉN' },
                     { id: 'bomba', label: '💣 BOMBA' },
                     { id: 'cadena', label: '⛓️ CADENA' },
@@ -1676,15 +1715,20 @@
                         </div>
                     </div>
 
-                    ${state.libTab !== 'papelera' ? `
-                    <div class="relative">
-                        <input type="text" id="lib-search" oninput="filterLib()" placeholder="Buscar en ${currentTab.label}..." class="w-full glass p-4 rounded-2xl border-white/10 focus:outline-none focus:border-gold/50 transition-colors pl-12 italic text-sm">
-                        <span class="absolute left-4 top-1/2 -translate-y-1/2 opacity-30">🔍</span>
-                    </div>
-                    ` : `
+                    ${state.libTab === 'papelera' ? `
                     <div class="glass p-4 rounded-2xl text-center border-red-500/20 bg-red-500/5">
                         <p class="text-red-400 font-bold text-sm uppercase tracking-widest mb-1">🗑️ Elementos Ocultos</p>
                         <p class="text-slate-400 text-xs">Lo que envíes aquí no aparecerá en ninguna de tus partidas futuras.</p>
+                    </div>
+                    ` : state.libTab === 'favoritos' ? `
+                    <div class="glass p-4 rounded-2xl text-center border-amber-500/20 bg-amber-500/5">
+                        <p class="text-amber-400 font-bold text-sm uppercase tracking-widest mb-1">⭐ Tus Cartas Favoritas</p>
+                        <p class="text-slate-400 text-xs">Las cartas que marcaste con ⭐ en Toxic y Poker aparecen aquí.</p>
+                    </div>
+                    ` : `
+                    <div class="relative">
+                        <input type="text" id="lib-search" oninput="filterLib()" placeholder="Buscar en ${currentTab.label}..." class="w-full glass p-4 rounded-2xl border-white/10 focus:outline-none focus:border-gold/50 transition-colors pl-12 italic text-sm">
+                        <span class="absolute left-4 top-1/2 -translate-y-1/2 opacity-30">🔍</span>
                     </div>
                     `}
 
@@ -2356,17 +2400,12 @@
         function changeView(view) {
             console.log("Changing view to:", view);
             try {
-                // Limpieza al salir de juegos específicos
-
-                // Al entrar a Toxic siempre mostrar la pantalla de selección
                 if (view === 'toxic') {
                     state.toxicIndex = -1;
                 }
-                
                 state.view = view;
                 saveState();
                 render();
-                window.scrollTo(0, 0);
             } catch (e) {
                 console.error("Error in changeView:", e);
             }
@@ -2381,7 +2420,6 @@
             saveState();
             render();
         }
-
 
         function drawToxicCard() {
             let filteredDeck = TOXIC_CARDS;
@@ -2427,14 +2465,30 @@
             render();
         }
 
+        // ⭐ Toggle Favorito
+        window.toggleFavorite = function(tipo, id) {
+            if (!state.favorites) state.favorites = { toxic: [], poker: [] };
+            if (!state.favorites[tipo]) state.favorites[tipo] = [];
+            const idx = state.favorites[tipo].indexOf(String(id));
+            if (idx === -1) {
+                state.favorites[tipo].push(String(id));
+                showToast('⭐ Carta agregada a favoritos');
+            } else {
+                state.favorites[tipo].splice(idx, 1);
+                showToast('✖ Carta quitada de favoritos');
+            }
+            saveState();
+            filterLib();
+        };
+
         function filterLib() {
             const resultsContainer = document.getElementById('lib-results');
             const countContainer = document.getElementById('lib-count');
             if (!resultsContainer) return;
-            
+
             const searchInput = document.getElementById('lib-search');
             const query = searchInput ? searchInput.value.toLowerCase() : '';
-            
+
             const trashArray = (juego) => state.trash && state.trash[juego] ? state.trash[juego] : [];
             let allCardsHtml = '';
             let totalItems = 0;
@@ -2445,28 +2499,17 @@
                 types.forEach(t => {
                     trashArray(t).forEach(id => { trashItems.push({ type: t, id: id }); });
                 });
-                
                 totalItems = trashItems.length;
-
                 if (trashItems.length === 0) {
                     allCardsHtml = `<div class="text-center text-slate-500 py-12">La papelera está vacía</div>`;
                 } else {
                     allCardsHtml = trashItems.map(item => {
                         let label = item.type + " - " + item.id;
-                        if (item.type === 'toxic') {
-                            const c = TOXIC_CARDS.find(x => String(x.id) === item.id);
-                            if (c) label = `🔥 ${c.title}`;
-                        } else if (item.type === 'poker') {
-                            const c = POKER_CARDS.find(x => String(x.id) === item.id);
-                            if (c) label = `🃏 ${c.title}`;
-                        } else if (item.type === 'dilema') {
-                            label = `👑 Dilema: ${item.id.split('|')[0]}...`;
-                        } else if (item.type === 'sinexcusas') {
-                            const c = SIN_EXCUSAS_CARDS.find(x => String(x.id) === item.id);
-                            if (c) label = `🍻 ${c.body ? c.body.substring(0,40)+'...' : item.id}`;
-                        } else {
-                            label = `[${item.type}] ${item.id.substring(0, 40)}`;
-                        }
+                        if (item.type === 'toxic') { const c = TOXIC_CARDS.find(x => String(x.id) === item.id); if (c) label = `🔥 ${c.title}`; }
+                        else if (item.type === 'poker') { const c = POKER_CARDS.find(x => String(x.id) === item.id); if (c) label = `🃏 ${c.title}`; }
+                        else if (item.type === 'dilema') { label = `👑 Dilema: ${item.id.split('|')[0]}...`; }
+                        else if (item.type === 'sinexcusas') { const c = SIN_EXCUSAS_CARDS.find(x => String(x.id) === item.id); if (c) label = `🍻 ${c.body ? c.body.substring(0,40)+'...' : item.id}`; }
+                        else { label = `[${item.type}] ${item.id.substring(0, 40)}`; }
                         return `
                             <div class="glass p-4 rounded-xl flex justify-between items-center bg-red-950/20 border-red-500/20 group animate-fade-in">
                                 <span class="text-sm font-bold text-slate-300 truncate pr-4">${label}</span>
@@ -2475,20 +2518,56 @@
                         `;
                     }).join('');
                 }
+
+            } else if (state.libTab === 'favoritos') {
+                if (!state.favorites) state.favorites = { toxic: [], poker: [] };
+                let favItems = [];
+                (state.favorites.toxic || []).forEach(id => {
+                    const c = TOXIC_CARDS.find(x => String(x.id) === String(id));
+                    if (c) favItems.push({ type: 'toxic', id: String(id), card: c });
+                });
+                (state.favorites.poker || []).forEach(id => {
+                    const c = POKER_CARDS.find(x => String(x.id) === String(id));
+                    if (c) favItems.push({ type: 'poker', id: String(id), card: c });
+                });
+                totalItems = favItems.length;
+                if (favItems.length === 0) {
+                    allCardsHtml = `<div class="text-center text-slate-500 py-12 space-y-3"><div class="text-5xl">⭐</div><p class="font-bold">Aún no tenés favoritos</p><p class="text-xs">Presioná ⭐ en cualquier carta de Toxic o Poker.</p></div>`;
+                } else {
+                    allCardsHtml = favItems.map(({ type, id, card }) => {
+                        const isRed = type === 'toxic';
+                        return `
+                        <div class="glass p-6 rounded-[2.5rem] border-amber-500/20 bg-amber-500/5 space-y-4 relative overflow-hidden animate-fade-in">
+                            <div class="absolute top-4 right-4 flex gap-2 z-20">
+                                <button onclick="toggleFavorite('${type}', '${id}')" class="text-amber-400 bg-amber-500/20 w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all shadow-md text-lg">⭐</button>
+                                <button onclick="moverAPapelera('${type}', '${id}')" class="text-slate-400 bg-white/5 hover:bg-red-500/20 hover:text-red-500 w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all shadow-md">✕</button>
+                            </div>
+                            <div class="flex justify-between items-start pr-24">
+                                <span class="text-[9px] font-black ${isRed ? 'gold-text' : 'text-red-500'} tracking-[0.2em] uppercase border ${isRed ? 'border-amber-500/20 bg-amber-500/5' : 'border-red-500/20 bg-red-500/5'} px-3 py-1 rounded-full">${card.cat || card.category}</span>
+                                <div class="flex items-center gap-1.5 bg-slate-950/50 px-3 py-1 rounded-xl border border-white/5">
+                                    <span class="text-[10px]">🥃</span>
+                                    <span class="text-[10px] font-black text-white uppercase">${card.drink}</span>
+                                </div>
+                            </div>
+                            <div class="pr-6">
+                                <h4 class="font-bold text-white text-lg tracking-tight mb-1">${card.title}</h4>
+                                <p class="text-slate-400 text-sm leading-relaxed">${card.text}</p>
+                            </div>
+                        </div>`;
+                    }).join('');
+                }
+
             } else {
                 let items = [];
                 if (state.libTab === 'toxic') items = TOXIC_CARDS.filter(c => !trashArray('toxic').includes(String(c.id))).map(c => ({ id: c.id, label: `[${c.cat}] ${c.title} - ${c.text}`, obj: c }));
                 else if (state.libTab === 'poker') items = POKER_CARDS.filter(c => !trashArray('poker').includes(String(c.id))).map(c => ({ id: c.id, label: `[${c.category}] ${c.title} - ${c.text}`, obj: c }));
-                
                 else if (state.libTab === 'quienEsMas') items = QUIEN_ES_MAS.filter(c => !trashArray('quienEsMas').includes(c)).map(c => ({ id: c, label: c }));
                 else if (state.libTab === 'bomba') items = CATEGORIAS_BOMBA.filter(c => !trashArray('bomba').includes(c)).map(c => ({ id: c, label: c }));
                 else if (state.libTab === 'cadena') items = MICRO_RETOS.filter(c => !trashArray('cadena').includes(c)).map(c => ({ id: c, label: c }));
                 else if (state.libTab === 'dilema') items = DILEMAS_REY.filter(c => !trashArray('dilema').includes(c.a + "|" + c.b)).map(c => ({ id: c.a + "|" + c.b, label: `A: ${c.a} // B: ${c.b}` }));
                 else if (state.libTab === 'mimica') items = PALABRAS_MIMICA.filter(c => !trashArray('mimica').includes(c)).map(c => ({ id: c, label: c }));
 
-                // Filter explicitly by search query
                 if (query) items = items.filter(i => i.label.toLowerCase().includes(query));
-
                 totalItems = items.length;
                 const visibleItems = items.slice(0, 100);
 
@@ -2498,14 +2577,17 @@
                     allCardsHtml = visibleItems.map(item => {
                         if (state.libTab === 'toxic' || state.libTab === 'poker') {
                             const card = item.obj;
+                            if (!state.favorites) state.favorites = { toxic: [], poker: [] };
+                            const isFav = (state.favorites[state.libTab] || []).includes(String(item.id));
                             return `
                                 <div onclick="previewCard('${state.libTab}', '${String(item.id).replace(/'/g, "\\'")}')" class="cursor-pointer glass p-6 rounded-[2.5rem] border-white/5 space-y-4 relative overflow-hidden group hover:border-white/20 transition-colors">
                                     <div class="absolute top-4 right-4 flex gap-2 z-20">
+                                        <button onclick="event.stopPropagation(); toggleFavorite('${state.libTab}', '${String(item.id).replace(/'/g, "\\'")}')" class="${isFav ? 'text-amber-400 bg-amber-500/20' : 'text-slate-500 bg-white/5 hover:text-amber-400 hover:bg-amber-500/20'} w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all shadow-md text-lg">⭐</button>
                                         <button onclick="event.stopPropagation(); previewCard('${state.libTab}', '${String(item.id).replace(/'/g, "\\'")}')" class="text-slate-300 bg-white/5 hover:bg-emerald-500/20 hover:text-emerald-400 w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all shadow-md">👁️</button>
                                         <button onclick="event.stopPropagation(); moverAPapelera('${state.libTab}', '${String(item.id).replace(/'/g, "\\'")}')" class="text-slate-400 bg-white/5 hover:bg-red-500/20 hover:text-red-500 w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all shadow-md">✕</button>
                                     </div>
                                     <div class="absolute -right-4 -top-4 text-4xl opacity-[0.03] rotate-12">${state.libTab === 'toxic' ? '🔥' : '🃏'}</div>
-                                    <div class="flex justify-between items-start pr-24 pointer-events-none">
+                                    <div class="flex justify-between items-start pr-32 pointer-events-none">
                                         <span class="text-[9px] font-black ${state.libTab === 'toxic' ? 'gold-text' : 'text-red-500'} tracking-[0.2em] uppercase border ${state.libTab === 'toxic' ? 'border-amber-500/20 bg-amber-500/5' : 'border-red-500/20 bg-red-500/5'} px-3 py-1 rounded-full">${card.cat || card.category}</span>
                                         <div class="flex items-center gap-1.5 bg-slate-950/50 px-3 py-1 rounded-xl border border-white/5">
                                             <span class="text-[10px]">🥃</span>
@@ -2542,13 +2624,15 @@
                     }).join('');
                 }
             }
-            
+
             resultsContainer.innerHTML = allCardsHtml;
             if (countContainer) {
                 const suffix = totalItems > 100 ? ' (Mostrando 100)' : '';
                 countContainer.innerText = 'Total: ' + totalItems + ' elementos' + suffix;
             }
         }
+
+
 
         function render() {
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2926,6 +3010,11 @@
                     state.view = 'menu';
                     saveState();
                 }
+                // Auto-aplicar apodo de juego si no hay nombre local
+                const nickname = state.user.user_metadata?.game_nickname;
+                if (nickname && !localStorage.getItem('localPlayerName')) {
+                    localStorage.setItem('localPlayerName', nickname);
+                }
             }
             
             supabaseClient.auth.onAuthStateChange((_event, session) => {
@@ -2940,6 +3029,27 @@
                 saveState();
                 render();
             });
+        }
+
+        async function saveGameNickname() {
+            if (!supabaseClient || !state.user) return showToast('⚠️ Debés iniciar sesión');
+            const input = document.getElementById('nicknameInput');
+            const nickname = input?.value.trim();
+            if (!nickname) return showToast('✍️ Escribí un apodo');
+            if (nickname.length > 20) return showToast('⚠️ Máximo 20 caracteres');
+            const { data, error } = await supabaseClient.auth.updateUser({
+                data: { game_nickname: nickname }
+            });
+            if (error) {
+                showToast('❌ Error guardando: ' + error.message);
+            } else {
+                state.user = data.user;
+                // Aplicar como nombre local automáticamente
+                localStorage.setItem('localPlayerName', nickname);
+                showToast('✅ Apodo "' + nickname + '" guardado y activo');
+                saveState();
+                render();
+            }
         }
 
         async function updateProfilePlayers(playersArray) {
@@ -3084,8 +3194,21 @@
         }
 
         function ucCobarde() {
-            showToast('🏳️ Cobarde — 1 trago');
+            const uc = state.ultimaCarta;
+            const player = uc.players[uc.currentPlayerIndex];
+            // FIX: el cobarde SIEMPRE cuenta como turno jugado
+            player.turnsPlayed++;
+            showToast('🏳️ ' + player.name + ' — Cobarde. 1 trago');
             vibrate([50,50,100]);
+            // Verificar si ya terminaron todos
+            const allDone = uc.players.every(p => p.turnsPlayed >= 3);
+            if (allDone) {
+                uc.phase = 'final';
+                vibrate([100,50,100,50,200]);
+                saveState();
+                render();
+                return;
+            }
             ucAdvancePlayer();
         }
 
