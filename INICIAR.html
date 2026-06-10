@@ -411,9 +411,28 @@
         <div class="w-10"></div> <!-- Spacer -->
     </header>
 
-    <main id="game-container" class="flex-grow container mx-auto px-4 pb-12 max-w-md">
-        <!-- Views will be injected here -->
-    </main>
+    <div class="flex-grow flex w-full max-w-[1200px] mx-auto justify-center">
+        <!-- Banner Lateral Izquierdo (Desktop) -->
+        <aside class="hidden lg:flex flex-col w-[250px] p-4 items-center justify-start sticky top-24 h-[calc(100vh-6rem)]">
+            <div class="w-full h-full max-h-[600px] bg-slate-900/50 rounded-2xl border border-slate-800 flex items-center justify-center relative overflow-hidden">
+                <div class="absolute inset-0 bg-gradient-to-b from-amber-500/5 to-transparent"></div>
+                <span class="text-slate-600 text-sm font-bold uppercase tracking-widest rotate-[-90deg]">Anuncio</span>
+            </div>
+        </aside>
+
+        <!-- Contenedor Principal -->
+        <main id="game-container" class="flex-grow w-full px-4 pb-12 max-w-md relative">
+            <!-- Views will be injected here -->
+        </main>
+
+        <!-- Banner Lateral Derecho (Desktop) -->
+        <aside class="hidden lg:flex flex-col w-[250px] p-4 items-center justify-start sticky top-24 h-[calc(100vh-6rem)]">
+            <div class="w-full h-full max-h-[600px] bg-slate-900/50 rounded-2xl border border-slate-800 flex items-center justify-center relative overflow-hidden">
+                <div class="absolute inset-0 bg-gradient-to-b from-amber-500/5 to-transparent"></div>
+                <span class="text-slate-600 text-sm font-bold uppercase tracking-widest rotate-90">Anuncio</span>
+            </div>
+        </aside>
+    </div>
 
     <script>
 
@@ -693,7 +712,7 @@
         }
         
         // Limpiar vistas obsoletas que ya no existen (ej: el sabio del guaro)
-        const validViews = ['welcome','menu','setup','auth','profile','onlineRoom',
+        const validViews = ['welcome','menu','setup','auth','profile',
             'toxic','poker','sinexcusas','sinexcusasSetup','quienEsMas','quienEsMasGame',
             'bomba','retoCadena','dilemaRey','mimicaExpress','ultimaCarta','biblioteca'];
         if (!validViews.includes(state.view)) {
@@ -829,7 +848,31 @@
             render();
         }
 
+        function evaluarMision(cumplio) {
+            if (!state.misionesTerminadas || state.misionesTerminadas.length === 0) return;
+            const mision = state.misionesTerminadas.shift();
+            if (cumplio) {
+                showToast(`🎉 ${mision.jugador} cumplió la misión con éxito!`);
+            } else {
+                showToast(`💀 ${mision.jugador} no cumplió. ¡Shots de castigo!`);
+            }
+            saveState();
+            render();
+        }
+
         function drawSinExcusasCard() {
+            // Manejo de misiones activas (decrementar turnos)
+            if (state.misiones && state.misiones.length > 0) {
+                state.misiones.forEach(m => m.turnos--);
+                const terminadas = state.misiones.filter(m => m.turnos <= 0);
+                state.misiones = state.misiones.filter(m => m.turnos > 0);
+                
+                if (terminadas.length > 0) {
+                    if (!state.misionesTerminadas) state.misionesTerminadas = [];
+                    state.misionesTerminadas.push(...terminadas);
+                }
+            }
+
             state.sinexcusas.index++;
             if (state.sinexcusas.index >= state.sinexcusas.deck.length) {
                 resetSinExcusasDeck();
@@ -838,6 +881,21 @@
             }
             state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
             state.sinexcusas.animationClass = 'card-enter';
+
+            // Si la nueva carta es misión, agregarla a la lista
+            const currentCard = state.sinexcusas.deck[state.sinexcusas.index];
+            if (currentCard && currentCard.cat === 'mision_oculta') {
+                const match = (currentCard.body || currentCard.text || '').match(/(\d+)\s+turnos?/i);
+                const turnos = match ? parseInt(match[1]) : 3;
+                if (!state.misiones) state.misiones = [];
+                state.misiones.push({
+                    jugador: state.players[state.currentPlayerIndex].name,
+                    texto: currentCard.body || currentCard.text,
+                    turnos: turnos,
+                    idCarta: currentCard.id
+                });
+            }
+
             saveState();
             render();
         }
@@ -890,59 +948,7 @@
 
         // --- Render Functions ---
         const views = {
-            onlineRoom: () => `
-                <div class="space-y-6 animate-fade-in py-4">
-                    <div class="text-center space-y-2">
-                        <div style="font-size:3rem;">🌐</div>
-                        <h2 class="text-3xl font-black gradient-gold uppercase">Multijugador</h2>
-                        <p class="text-slate-400 text-sm">Sincroniza todos los juegos en vivo</p>
-                    </div>
 
-                    ${state.roomCode ? `
-                    <div class="glass p-6 rounded-3xl border border-emerald-500/20 text-center space-y-4 shadow-[0_0_20px_rgba(16,185,129,0.1)]">
-                        <p class="text-emerald-400 font-bold uppercase tracking-widest text-xs">Conectado a Sala</p>
-                        <div class="room-code-display text-5xl font-black tracking-[0.2em] text-emerald-400 drop-shadow-md">
-                            ${state.roomCode}
-                        </div>
-                        <p class="text-slate-400 text-sm">Cualquier juego que abras se sincronizará con todos los de esta sala al instante.</p>
-                        
-                        <div class="grid grid-cols-2 gap-3 mt-4">
-                            <button onclick="changeView('menu')" class="bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-3 rounded-xl font-bold touch-feedback ripple text-white">
-                                Jugar Ahora
-                            </button>
-                            <button onclick="abandonarSala()" class="bg-red-500/10 text-red-400 border border-red-500/30 px-4 py-3 rounded-xl font-bold touch-feedback ripple">
-                                Desconectar
-                            </button>
-                        </div>
-                    </div>
-                    ` : `
-                    <div class="glass p-6 rounded-3xl border border-white/10 space-y-6">
-                        <button onclick="crearSala()" class="w-full p-4 rounded-2xl font-black text-slate-950 text-lg uppercase shadow-xl touch-feedback ripple" style="background:linear-gradient(135deg,#10b981,#059669);">
-                            Crear Nueva Sala
-                        </button>
-                        
-                        <div class="relative flex items-center py-2">
-                            <div class="flex-grow border-t border-slate-700"></div>
-                            <span class="flex-shrink-0 mx-4 text-slate-500 text-sm font-bold uppercase">o únete a una</span>
-                            <div class="flex-grow border-t border-slate-700"></div>
-                        </div>
-
-                        <div class="flex gap-2">
-                            <input type="text" id="room-code-input" placeholder="Código de 6 dígitos" 
-                                   class="flex-1 bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-center font-mono tracking-widest text-lg"
-                                   maxlength="6">
-                            <button onclick="unirseSala()" class="glass bg-white/5 border border-white/10 px-6 py-3 rounded-xl font-bold touch-feedback ripple hover:bg-white/10 text-emerald-400">
-                                Entrar
-                            </button>
-                        </div>
-                    </div>
-                    `}
-                    
-                    <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-white touch-feedback mt-6">
-                        Volver al Menú
-                    </button>
-                </div>
-            `,
             welcome: () => `
                 <div class="space-y-8 animate-fade-in py-8 flex flex-col items-center justify-center min-h-[70vh]">
                     <div class="text-center space-y-4">
@@ -956,14 +962,11 @@
                             🔐 Iniciar con Cuenta
                         </button>
                         
-                        <div class="relative flex items-center py-2">
-                            <div class="flex-grow border-t border-slate-700"></div>
-                            <span class="flex-shrink-0 mx-4 text-slate-500 text-sm font-bold uppercase">o</span>
-                            <div class="flex-grow border-t border-slate-700"></div>
-                        </div>
-
-                        <button onclick="changeView('setup')" class="w-full glass p-4 rounded-2xl font-bold text-white border border-white/10 touch-feedback ripple">
-                            👤 Jugar como Invitado
+                        <button onclick="changeView('setup')" class="w-full glass p-4 rounded-2xl font-bold text-white border border-white/10 touch-feedback ripple mb-3">
+                            📱 Jugar Localmente (1 disp.)
+                        </button>
+                        <button onclick="changeView('roomLobby')" class="w-full glass p-4 rounded-2xl font-bold text-amber-400 border border-amber-500/20 touch-feedback ripple">
+                            📡 Jugar en Sala Sincronizada
                         </button>
                     </div>
                 </div>
@@ -1036,17 +1039,6 @@
                             <p class="text-sm font-bold text-white">${(state.players || []).map(p => p.name).join(', ')}</p>
                         </div>
                         <span class="text-slate-500 text-sm">✏️</span>
-                    </button>
-
-                    <!-- Modo Multijugador Global -->
-                    <button onclick="changeView('onlineRoom')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-emerald-500/20 ripple touch-feedback mt-4 relative overflow-hidden">
-                        <div class="bg-emerald-500/20 p-4 rounded-2xl group-hover:bg-emerald-500/30 transition-colors">
-                            <span class="text-2xl">${state.roomCode ? '🟢' : '🌐'}</span>
-                        </div>
-                        <div class="text-left">
-                            <h2 class="text-lg font-bold ${state.roomCode ? 'text-emerald-400' : 'text-emerald-500'}">SALA MULTIJUGADOR</h2>
-                            <p class="text-slate-400 text-sm">${state.roomCode ? 'Conectado: ' + state.roomCode : 'Sincroniza pantallas en vivo'}</p>
-                        </div>
                     </button>
 
                     <!-- Juegos de Cartas -->
@@ -1495,7 +1487,22 @@
                             ${CAT_LABELS[card.cat] || card.cat}
                         </div>
                         <div class="flex-grow flex items-center justify-center text-center w-full px-2 mb-6">
-                            <p class="text-white text-xl font-bold leading-relaxed">${card.body || card.text || ''}</p>
+                            ${(() => {
+                                if (card.cat === 'mision_oculta') {
+                                    const localName = localStorage.getItem('localPlayerName');
+                                    const isMyTurn = (!state.roomState) || (localName === (currentPlayer?.name || currentPlayer));
+                                    if (!isMyTurn) {
+                                        return `
+                                            <div class="flex flex-col items-center justify-center opacity-90">
+                                                <span class="text-6xl mb-4 drop-shadow-[0_0_15px_rgba(245,158,11,0.5)]">🤫</span>
+                                                <p class="text-amber-400 text-2xl font-black uppercase tracking-widest drop-shadow-md">Misión Secreta</p>
+                                                <p class="text-slate-300 text-sm mt-4 font-bold px-4">El contenido es secreto y solo lo puede ver ${currentPlayer?.name || currentPlayer}.</p>
+                                            </div>
+                                        `;
+                                    }
+                                }
+                                return `<p class="text-white text-xl font-bold leading-relaxed">${card.body || card.text || ''}</p>`;
+                            })()}
                         </div>
                         ${card.drink ? `
                         <div class="w-full flex flex-col items-center space-y-1">
@@ -2534,6 +2541,7 @@
         }
 
         function render() {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
             const container = document.getElementById('game-container');
             const headerTitle = document.getElementById('header-title');
             const backBtn = document.getElementById('back-btn');
@@ -2555,6 +2563,83 @@
                 state.view = 'welcome';
                 container.innerHTML = views.welcome();
             }
+
+            // Sincronización UI - Bloqueo de Turnos para Salas Sincronizadas
+            if (state.roomState && state.roomState.code && ['sinexcusas','toxic','quienEsMasGame','bomba','dilemaRey','mimicaExpress','retoCadena','poker'].includes(state.view)) {
+                let isMyTurn = true;
+                let currentPlayerName = '';
+                const localName = localStorage.getItem('localPlayerName');
+                const isHost = state.roomState.isHost;
+
+                // Detectar modo de configuración según el juego
+                let isSetupMode = false;
+                if (state.view === 'sinexcusas' && state.sinexcusas.index === -1) isSetupMode = true;
+
+                if (isSetupMode) {
+                    isMyTurn = isHost;
+                    currentPlayerName = state.roomState.hostName;
+                } else {
+                    currentPlayerName = state.players[state.currentPlayerIndex]?.name || '';
+                    isMyTurn = (localName === currentPlayerName);
+                }
+
+                if (!isMyTurn) {
+                    container.innerHTML += `
+                        <div class="fixed inset-0 z-[100] flex items-end justify-center pb-[15vh] pointer-events-auto" style="background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(3px);">
+                            <div class="glass p-5 rounded-3xl border border-amber-500/30 text-center shadow-2xl animate-pulse">
+                                <span class="text-4xl mb-2 block drop-shadow-lg">⏳</span>
+                                <p class="text-white font-black text-lg uppercase tracking-widest text-shadow">Turno de ${currentPlayerName}</p>
+                                <p class="text-amber-400 font-bold text-xs mt-1 uppercase tracking-widest">Espera a que juegue</p>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            // Modal para misiones terminadas
+            if (state.misionesTerminadas && state.misionesTerminadas.length > 0) {
+                const mision = state.misionesTerminadas[0];
+                const localName = localStorage.getItem('localPlayerName');
+                const isMyTurn = (localName === mision.jugador);
+                
+                // Si estamos en un solo dispositivo (no en sala), el que evalúa es cualquiera.
+                // En sala, evalúa el que era dueño de la misión (o el host como fallback).
+                const canEvaluate = !state.roomState || isMyTurn || state.roomState.isHost;
+
+                container.innerHTML += `
+                    <div class="fixed inset-0 z-[200] flex items-center justify-center p-4 pointer-events-auto" style="background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(5px);">
+                        <div class="glass p-8 rounded-[2.5rem] border border-amber-500/50 text-center shadow-2xl max-w-sm w-full animate-fade-in relative overflow-hidden">
+                            <div class="absolute inset-0 bg-amber-500/10 animate-pulse pointer-events-none"></div>
+                            <span class="text-6xl mb-4 block drop-shadow-[0_0_15px_rgba(245,158,11,0.5)]">⏱️</span>
+                            <h2 class="text-2xl font-black text-amber-400 uppercase tracking-widest mb-2">¡Tiempo Agotado!</h2>
+                            <p class="text-white text-lg font-bold mb-1">Misión de ${mision.jugador}</p>
+                            <p class="text-slate-300 text-sm italic mb-6">"${mision.texto}"</p>
+                            
+                            ${canEvaluate ? `
+                            <div class="grid grid-cols-2 gap-4 relative z-10">
+                                <button onclick="evaluarMision(true)" class="bg-gradient-to-r from-emerald-500 to-green-600 text-white font-bold p-4 rounded-2xl touch-feedback ripple shadow-lg">
+                                    ✅ Cumplió
+                                </button>
+                                <button onclick="evaluarMision(false)" class="bg-gradient-to-r from-red-500 to-rose-600 text-white font-bold p-4 rounded-2xl touch-feedback ripple shadow-lg">
+                                    ❌ Falló
+                                </button>
+                            </div>
+                            ` : `
+                            <p class="text-amber-400 font-bold text-sm uppercase mt-4">Esperando que ${mision.jugador} evalúe su misión...</p>
+                            `}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Banner inferior para móviles (se renderiza al final del contenido, sin fijar)
+            container.innerHTML += `
+                <div class="block lg:hidden w-full h-[100px] bg-slate-900/50 rounded-2xl border border-slate-800 flex items-center justify-center mt-12 mb-8 relative overflow-hidden">
+                    <div class="absolute inset-0 bg-gradient-to-r from-amber-500/5 to-transparent"></div>
+                    <span class="text-slate-600 text-xs font-bold uppercase tracking-widest">Anuncio Móvil</span>
+                </div>
+            `;
+
 
             // Add card flip animation on render
             const cardElements = container.querySelectorAll('.glass.rounded-\\[2\\.5rem\\]');
@@ -3154,6 +3239,7 @@
                 });
                 if (error) { showToast('❌ Error: ' + error.message); return; }
 
+                localStorage.setItem('localPlayerName', hostName);
                 state.roomState = { code, isHost: true, hostName, players: [{ name: hostName }] };
                 if (!state.players) state.players = [];
                 state.players = [{ name: hostName }];
@@ -3182,6 +3268,7 @@
                 const updatedPlayers = [...(gs.players || []), { name: guestName }];
                 await supabaseClient.from('rooms').update({ game_state: { ...gs, players: updatedPlayers } }).eq('code', code);
 
+                localStorage.setItem('localPlayerName', guestName);
                 state.roomState = { code, isHost: false, guestName, players: updatedPlayers };
                 saveState();
                 subscribeToRoom(code);
@@ -3200,8 +3287,8 @@
                     if (state.roomState && gs) {
                         state.roomState.players = gs.players;
                         if (gs.status === 'playing') {
-                            state.ultimaCarta = gs.ultimaCarta;
-                            state.view = 'ultimaCarta';
+                            // Actualizar el estado global con lo que viene de supabase
+                            Object.assign(state, gs.full_state);
                         }
                         saveState();
                         render();
@@ -3213,21 +3300,11 @@
             if (!supabaseClient || !state.roomState) return;
             const code = state.roomState.code;
             
-            // Build initial UC state
-            const players = state.roomState.players.map(p => ({
-                name: p.name, score: 0, turnsPlayed: 0
-            }));
-            const uc = {
-                active: true, players, currentPlayerIndex: 0,
-                deck: buildDeck(), deckIndex: 0,
-                totalRounds: 3 * players.length, currentRound: 1,
-                phase: 'cobarde', currentStep: 0, currentPoints: 0, currentDrinks: 0,
-                drawnCards: [], revealed: false, lastGuessCorrect: false,
-                revanchaCard: null, lastRevanchaCorrect: false,
-                isOnline: true
-            };
+            // Asignar los jugadores de la sala al estado global
+            state.players = state.roomState.players;
+            state.view = 'menu'; // Mover a todos al menú para elegir juego
             
-            const gs = { status: 'playing', players: state.roomState.players, ultimaCarta: uc };
+            const gs = { status: 'playing', players: state.roomState.players, full_state: { view: state.view, players: state.players } };
             await supabaseClient.from('rooms').update({ game_state: gs }).eq('code', code);
         }
 
@@ -3235,7 +3312,7 @@
             state.roomState = null;
             if (realtimeChannel) { realtimeChannel.unsubscribe(); realtimeChannel = null; }
             saveState();
-            changeView('ultimaCarta');
+            changeView('welcome');
         }
 
         function reiniciarRetoCadena() {
