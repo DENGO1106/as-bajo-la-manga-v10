@@ -90,41 +90,50 @@
         async function casUpdateRoom(code, payloadOrBuilder, knownLastActivity = null) {
             const client = (typeof window !== 'undefined' && window.supabaseClient) ? window.supabaseClient : (typeof supabaseClient !== 'undefined' ? supabaseClient : null);
             if (!client) return { error: 'no supabase' };
-            try {
-                let payload = payloadOrBuilder;
-                if (typeof payloadOrBuilder === 'function') {
-                    const rowRes = await client.from('rooms').select('game_state, last_activity').eq('code', code).single();
-                    const row = rowRes.data || {};
-                    payload = payloadOrBuilder(row);
-                    if (payload === null) return { skipped: true };
-                }
-                const newLast = new Date().toISOString();
-                payload.last_activity = newLast;
-                let res;
-                if (knownLastActivity) {
-                    res = await client.from('rooms').update(payload).eq('code', code).eq('last_activity', knownLastActivity);
-                    if (res.error) {
-                        console.warn('casUpdateRoom CAS failed, fallback', res.error);
-                        res = await client.from('rooms').update(payload).eq('code', code);
+            const maxAttempts = 3;
+            let attempt = 0;
+            while (attempt < maxAttempts) {
+                try {
+                    let payload = payloadOrBuilder;
+                    if (typeof payloadOrBuilder === 'function') {
+                        const rowRes = await client.from('rooms').select('game_state, last_activity').eq('code', code).single();
+                        const row = rowRes.data || {};
+                        payload = payloadOrBuilder(row);
+                        if (payload === null) return { skipped: true };
                     }
-                } else {
-                    const rowRes = await client.from('rooms').select('last_activity').eq('code', code).single();
-                    const last = rowRes.data ? rowRes.data.last_activity : null;
-                    if (last) {
-                        res = await client.from('rooms').update(payload).eq('code', code).eq('last_activity', last);
+                    const newLast = new Date().toISOString();
+                    payload.last_activity = newLast;
+                    let res;
+                    if (knownLastActivity) {
+                        res = await client.from('rooms').update(payload).eq('code', code).eq('last_activity', knownLastActivity);
                         if (res.error) {
                             console.warn('casUpdateRoom CAS failed, fallback', res.error);
                             res = await client.from('rooms').update(payload).eq('code', code);
                         }
                     } else {
-                        res = await client.from('rooms').update(payload).eq('code', code);
+                        const rowRes = await client.from('rooms').select('last_activity').eq('code', code).single();
+                        const last = rowRes.data ? rowRes.data.last_activity : null;
+                        if (last) {
+                            res = await client.from('rooms').update(payload).eq('code', code).eq('last_activity', last);
+                            if (res.error) {
+                                console.warn('casUpdateRoom CAS failed, fallback', res.error);
+                                res = await client.from('rooms').update(payload).eq('code', code);
+                            }
+                        } else {
+                            res = await client.from('rooms').update(payload).eq('code', code);
+                        }
                     }
+                    if (!res || !res.error) return res;
+                    throw res.error;
+                } catch (e) {
+                    attempt++;
+                    const backoff = 150 * Math.pow(2, attempt);
+                    console.warn('casUpdateRoom attempt', attempt, 'failed', e, 'backoff', backoff);
+                    if (attempt >= maxAttempts) return { error: e };
+                    await new Promise(r => setTimeout(r, backoff));
                 }
-                return res;
-            } catch (e) {
-                console.warn('casUpdateRoom error', e);
-                return { error: e };
             }
+            return { error: 'max attempts reached' };
         }
 
         // --- Touch Gesture System ---

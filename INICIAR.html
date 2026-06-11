@@ -433,6 +433,7 @@
             </div>
         </aside>
     </div>
+    <div id="turnLockIndicator" style="position:fixed;right:12px;bottom:12px;z-index:99999;padding:8px 12px;border-radius:12px;background:rgba(0,0,0,0.6);color:#fff;font-size:12px;backdrop-filter:blur(6px);display:none">🔒 Turno: <span id="turnLockOwner"></span></div>
 
     <script>
 
@@ -467,50 +468,59 @@
 
 
         // --- State Management ---
-        let state = {
-            view: 'menu',
-            // Sistema unificado de jugadores (GLOBAL)
-            players: [],
-            currentPlayerIndex: 0,
-            gameStarted: false,
+        async function casUpdateRoom(code, payloadOrBuilder, knownLastActivity = null) {
+            if (!window.supabaseClient) return { error: 'no supabase' };
+            // Retry with exponential backoff
+            const maxAttempts = 3;
+            let attempt = 0;
+            while (attempt < maxAttempts) {
+                try {
+                    let payload = payloadOrBuilder;
+                    if (typeof payloadOrBuilder === 'function') {
+                        const rowRes = await window.supabaseClient.from('rooms').select('game_state, last_activity').eq('code', code).single();
+                        const row = rowRes.data || {};
+                        payload = payloadOrBuilder(row);
+                        if (payload === null) return { skipped: true };
+                    }
 
-            // Toxic Cards
-            toxicDeck: [],
-            toxicIndex: -1,
-            toxicCategory: ['TODAS'],
+                    const newLast = new Date().toISOString();
+                    payload.last_activity = newLast;
 
-            // O Se Caga
-            
+                    let res;
+                    if (knownLastActivity) {
+                        res = await window.supabaseClient.from('rooms').update(payload).eq('code', code).eq('last_activity', knownLastActivity);
+                        if (res.error) {
+                            console.warn('casUpdateRoom CAS failed, fallback', res.error);
+                            res = await window.supabaseClient.from('rooms').update(payload).eq('code', code);
+                        }
+                    } else {
+                        const rowRes = await window.supabaseClient.from('rooms').select('last_activity').eq('code', code).single();
+                        const last = rowRes.data ? rowRes.data.last_activity : null;
+                        if (last) {
+                            res = await window.supabaseClient.from('rooms').update(payload).eq('code', code).eq('last_activity', last);
+                            if (res.error) {
+                                console.warn('casUpdateRoom CAS failed, fallback', res.error);
+                                res = await window.supabaseClient.from('rooms').update(payload).eq('code', code);
+                            }
+                        } else {
+                            res = await window.supabaseClient.from('rooms').update(payload).eq('code', code);
+                        }
+                    }
 
-            // Sistema de Papelera (Universal)
-            trash: {
-                toxic: [],
-                sinexcusas: [],
-                poker: []
-            },
-
-            // Poker Caliente
-            pokerDeck: [],
-            pokerIndex: -1,
-
-            // ¿Quién Es Más?
-            quienEsMas: {
-                currentQuestion: null,
-                questionIndex: 0,
-                usedQuestions: [],
-                scores: {}
-            },
-
-            // Bomba de Palabras
-            bomba: {
-                currentCategory: null,
-                categoryIndex: 0,
-                timerDuration: 0,
-                isActive: false,
-                timerInterval: null
-            },
-
-            // Reto en Cadena
+                    // If no error return result
+                    if (!res || !res.error) return res;
+                    // otherwise throw to retry
+                    throw res.error;
+                } catch (e) {
+                    attempt++;
+                    const backoff = 150 * Math.pow(2, attempt); // 300,600,1200ms
+                    console.warn('casUpdateRoom attempt', attempt, 'failed', e, 'backoff', backoff);
+                    if (attempt >= maxAttempts) return { error: e };
+                    await new Promise(r => setTimeout(r, backoff));
+                }
+            }
+            return { error: 'max attempts reached' };
+        }
             retoCadena: {
                 currentChain: [],
                 usedRetos: [],
@@ -750,6 +760,8 @@
             }, ROOM_INACTIVITY_MS);
         }
 
+        // Debounced remote sync: write local storage immediately, schedule remote sync
+        let _saveStateRemoteTimer = null;
         async function saveState(isRemote = false) {
             if (state.user) {
                 localStorage.setItem('as_bajo_la_manga_state', JSON.stringify(state));
@@ -762,26 +774,21 @@
             // BUG FIX #2: usar roomCode O roomState.code (el que esté disponible)
             const activeRoomCode = state.roomCode || state.roomState?.code;
             if (activeRoomCode && !isRemote && window.supabaseClient) {
-                // BUG FIX #3: subir full_state con TODO el estado del juego
-                const fullState = { ...state };
-                delete fullState.user;
-                delete fullState.roomState; // no sincronizar identidad del dispositivo
-
-                try {
-                    const payload = {
-                        game_state: {
-                            status: 'playing',
-                            players: state.players,
-                            full_state: fullState
-                        }
-                    };
-                    const res = await casUpdateRoom(activeRoomCode, payload);
-                    if (res && res.error) console.error('Supabase sync error:', res.error);
-                } catch (e) {
-                    console.warn('saveState supabase error', e);
-                }
-                resetInactivityTimers();
+                // schedule remote sync with debounce
+                clearTimeout(_saveStateRemoteTimer);
+                _saveStateRemoteTimer = setTimeout(async () => {
+                    const fullState = { ...state };
+                    delete fullState.user;
+                    delete fullState.roomState; // no sincronizar identidad del dispositivo
+                    try {
+                        const res = await casUpdateRoom(activeRoomCode, { game_state: { status: 'playing', players: state.players, full_state: fullState } });
+                        if (res && res.error) console.error('Supabase sync error:', res.error);
+                    } catch (e) { console.warn('saveState supabase error', e); }
+                    resetInactivityTimers();
+                }, 350);
             }
+            // update UI indicator for lock owner
+            try { updateTurnLockIndicator(); } catch (e) {}
         }
 
         // --- Utilidades ---
@@ -909,6 +916,20 @@
                 if (state.full_state) delete state.full_state.turnLock;
                 saveState(true);
             } catch (e) { console.warn('releaseTurnLock', e); }
+        }
+
+        function updateTurnLockIndicator() {
+            try {
+                const el = document.getElementById('turnLockIndicator');
+                const nameEl = document.getElementById('turnLockOwner');
+                const owner = state.full_state?.turnLock?.owner || state.turnLock?.owner || null;
+                if (owner) {
+                    nameEl.innerText = owner;
+                    el.style.display = 'block';
+                } else {
+                    el.style.display = 'none';
+                }
+            } catch (e) { /* ignore */ }
         }
 
         // Wrapper that acquires lock, runs action, and releases it
