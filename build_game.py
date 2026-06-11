@@ -74,6 +74,55 @@ if idx_state != -1:
 else:
     print("❌ No se encontró el estado inicial")
 
+# 1.6 CAS helper injection for generated JS
+CAS_HELPER = """
+        // --- casUpdateRoom helper (injected by build_game) ---
+        async function casUpdateRoom(code, payloadOrBuilder, knownLastActivity = null) {
+            if (!window.supabaseClient) return { error: 'no supabase' };
+            try {
+                let payload = payloadOrBuilder;
+                if (typeof payloadOrBuilder === 'function') {
+                    const rowRes = await window.supabaseClient.from('rooms').select('game_state, last_activity').eq('code', code).single();
+                    const row = rowRes.data || {};
+                    payload = payloadOrBuilder(row);
+                    if (payload === null) return { skipped: true };
+                }
+                const newLast = new Date().toISOString();
+                payload.last_activity = newLast;
+                let res;
+                if (knownLastActivity) {
+                    res = await window.supabaseClient.from('rooms').update(payload).eq('code', code).eq('last_activity', knownLastActivity);
+                    if (res.error) {
+                        console.warn('casUpdateRoom CAS failed, fallback', res.error);
+                        res = await window.supabaseClient.from('rooms').update(payload).eq('code', code);
+                    }
+                } else {
+                    const rowRes = await window.supabaseClient.from('rooms').select('last_activity').eq('code', code).single();
+                    const last = rowRes.data ? rowRes.data.last_activity : null;
+                    if (last) {
+                        res = await window.supabaseClient.from('rooms').update(payload).eq('code', code).eq('last_activity', last);
+                        if (res.error) {
+                            console.warn('casUpdateRoom CAS failed, fallback', res.error);
+                            res = await window.supabaseClient.from('rooms').update(payload).eq('code', code);
+                        }
+                    } else {
+                        res = await window.supabaseClient.from('rooms').update(payload).eq('code', code);
+                    }
+                }
+                return res;
+            } catch (e) {
+                console.warn('casUpdateRoom error', e);
+                return { error: e };
+            }
+        }
+"""
+idx_helpers = html.find('        // --- Multiplayer helpers ---')
+if idx_helpers != -1:
+    html = html[:idx_helpers] + CAS_HELPER + html[idx_helpers:]
+    print("✅ CAS helper insertado")
+else:
+    print("❌ No se encontró el lugar para insertar CAS helper")
+
 # 2. SDK SUPABASE
 SDK_INJECT = """    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 """
@@ -926,7 +975,11 @@ FUNCTIONS_INJECT = """
                 if (gs.status !== 'waiting') { showToast('⚠️ La partida ya comenzó'); return; }
 
                 const updatedPlayers = [...(gs.players || []), { name: guestName }];
-                await supabaseClient.from('rooms').update({ game_state: { ...gs, players: updatedPlayers } }).eq('code', code);
+                try {
+                    const payload = { game_state: { ...gs, players: updatedPlayers } };
+                    const res = await casUpdateRoom(code, payload);
+                    if (res && res.error) console.warn('joinRoom update error', res.error);
+                } catch(e) { console.warn('joinRoom supabase error', e); }
 
                 state.roomState = { code, isHost: false, guestName, players: updatedPlayers };
                 saveState();
@@ -974,7 +1027,10 @@ FUNCTIONS_INJECT = """
             };
             
             const gs = { status: 'playing', players: state.roomState.players, ultimaCarta: uc };
-            await supabaseClient.from('rooms').update({ game_state: gs }).eq('code', code);
+            try {
+                const res = await casUpdateRoom(code, { game_state: gs });
+                if (res && res.error) console.warn('startOnlineGame update error', res.error);
+            } catch(e) { console.warn('startOnlineGame supabase error', e); }
         }
 
         function leaveRoom() {

@@ -543,6 +543,8 @@
             },
             // Favoritos (⭐)
             favorites: { toxic: [], poker: [] },
+            // Última carta vista por jugador (map name -> { toxic: id, poker: id })
+            playerLast: {},
             
             // Supabase / Ultima Carta
             roomState: null,
@@ -748,7 +750,7 @@
             }, ROOM_INACTIVITY_MS);
         }
 
-        function saveState(isRemote = false) {
+        async function saveState(isRemote = false) {
             if (state.user) {
                 localStorage.setItem('as_bajo_la_manga_state', JSON.stringify(state));
                 sessionStorage.removeItem('as_bajo_la_manga_state');
@@ -765,16 +767,19 @@
                 delete fullState.user;
                 delete fullState.roomState; // no sincronizar identidad del dispositivo
 
-                window.supabaseClient.from('rooms').update({
-                    game_state: {
-                        status: 'playing',
-                        players: state.players,
-                        full_state: fullState
-                    },
-                    last_activity: new Date().toISOString()
-                }).eq('code', activeRoomCode).then(({error}) => {
-                    if (error) console.error("Supabase sync error:", error);
-                });
+                try {
+                    const payload = {
+                        game_state: {
+                            status: 'playing',
+                            players: state.players,
+                            full_state: fullState
+                        }
+                    };
+                    const res = await casUpdateRoom(activeRoomCode, payload);
+                    if (res && res.error) console.error('Supabase sync error:', res.error);
+                } catch (e) {
+                    console.warn('saveState supabase error', e);
+                }
                 resetInactivityTimers();
             }
         }
@@ -788,6 +793,140 @@
                 [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
             }
             return array;
+        }
+
+        // --- Multiplayer helpers ---
+        async function casUpdateRoom(code, payloadOrBuilder, knownLastActivity = null) {
+            if (!window.supabaseClient) return { error: 'no supabase' };
+            try {
+                let payload = payloadOrBuilder;
+                if (typeof payloadOrBuilder === 'function') {
+                    const rowRes = await window.supabaseClient.from('rooms').select('game_state, last_activity').eq('code', code).single();
+                    const row = rowRes.data || {};
+                    payload = payloadOrBuilder(row);
+                    if (payload === null) return { skipped: true };
+                }
+
+                const newLast = new Date().toISOString();
+                payload.last_activity = newLast;
+
+                let res;
+                if (knownLastActivity) {
+                    res = await window.supabaseClient.from('rooms').update(payload).eq('code', code).eq('last_activity', knownLastActivity);
+                    if (res.error) {
+                        console.warn('casUpdateRoom CAS failed, fallback', res.error);
+                        res = await window.supabaseClient.from('rooms').update(payload).eq('code', code);
+                    }
+                } else {
+                    const rowRes = await window.supabaseClient.from('rooms').select('last_activity').eq('code', code).single();
+                    const last = rowRes.data ? rowRes.data.last_activity : null;
+                    if (last) {
+                        res = await window.supabaseClient.from('rooms').update(payload).eq('code', code).eq('last_activity', last);
+                        if (res.error) {
+                            console.warn('casUpdateRoom CAS failed, fallback', res.error);
+                            res = await window.supabaseClient.from('rooms').update(payload).eq('code', code);
+                        }
+                    } else {
+                        res = await window.supabaseClient.from('rooms').update(payload).eq('code', code);
+                    }
+                }
+                return res;
+            } catch (e) {
+                console.warn('casUpdateRoom error', e);
+                return { error: e };
+            }
+        }
+
+        function getLocalPlayerName() {
+            return localStorage.getItem('localPlayerName') || (state.user && state.user.user_metadata && state.user.user_metadata.game_nickname) || null;
+        }
+
+        function isLocalPlayerTurn() {
+            try {
+                const localName = getLocalPlayerName();
+                if (!localName || !state.players || state.players.length === 0) return false;
+                const idx = state.currentPlayerIndex ?? 0;
+                return String(state.players[idx]?.name || '').trim() === String(localName).trim();
+            } catch (e) { return false; }
+        }
+
+        // --- Turn lock using Supabase ---
+        async function acquireTurnLock(timeoutMs = 30000) {
+            const localName = getLocalPlayerName();
+            if (!localName || !state.roomCode || !supabaseClient) return false;
+            try {
+                // Read current room, include last_activity for CAS
+                const { data: row, error } = await supabaseClient.from('rooms').select('game_state, last_activity').eq('code', state.roomCode).single();
+                if (error || !row) return false;
+                const gs = row.game_state || {};
+                const currentLock = gs.full_state?.turnLock || gs.turnLock;
+                const now = Date.now();
+                if (currentLock && currentLock.expiresAt && new Date(currentLock.expiresAt).getTime() > now) {
+                    if (String(currentLock.owner) === String(localName)) return true; // already ours
+                    return false; // someone else holds active lock
+                }
+
+                const lock = { owner: localName, expiresAt: new Date(now + timeoutMs).toISOString() };
+                const newFull = { ...(gs.full_state || {}), turnLock: lock };
+                const newGameState = { ...gs, full_state: newFull };
+
+                // Attempt CAS update using helper
+                const res = await casUpdateRoom(state.roomCode, { game_state: newGameState }, row.last_activity);
+
+                // If update succeeded (rows returned), claim succeeded
+                if (res && !res.error && !(res.skipped)) {
+                    if (!state.full_state) state.full_state = {};
+                    state.full_state.turnLock = lock;
+                    saveState(true);
+                    return true;
+                }
+
+                return false;
+            } catch (e) {
+                console.warn('acquireTurnLock exc', e);
+                return false;
+            }
+        }
+
+        async function releaseTurnLock() {
+            const localName = getLocalPlayerName();
+            if (!localName || !state.roomCode || !supabaseClient) return;
+            try {
+                const { data: row, error } = await supabaseClient.from('rooms').select('game_state, last_activity').eq('code', state.roomCode).single();
+                if (error || !row) return;
+                const gs = row.game_state || {};
+                const currentLock = gs.full_state?.turnLock || gs.turnLock;
+                if (!currentLock) return;
+                if (String(currentLock.owner) !== String(localName)) return; // only owner can release
+
+                const newFull = { ...(gs.full_state || {}) };
+                delete newFull.turnLock;
+                const newGameState = { ...gs, full_state: newFull };
+                const newLastActivity = new Date().toISOString();
+
+                await casUpdateRoom(state.roomCode, { game_state: newGameState }, row.last_activity);
+
+                if (state.full_state) delete state.full_state.turnLock;
+                saveState(true);
+            } catch (e) { console.warn('releaseTurnLock', e); }
+        }
+
+        // Wrapper that acquires lock, runs action, and releases it
+        async function withTurnLock(actionFn) {
+            if (!state.roomCode || !supabaseClient) {
+                // offline mode -> enforce local turn only
+                if (!isLocalPlayerTurn()) { showToast('⚠️ No es tu turno'); vibrate(100); return; }
+                actionFn();
+                return;
+            }
+            const got = await acquireTurnLock(20000);
+            if (!got) { showToast('🔒 Turno ocupado'); vibrate(120); return; }
+            try {
+                actionFn();
+            } finally {
+                // small delay to ensure state propagated
+                setTimeout(() => releaseTurnLock(), 500);
+            }
         }
 
         function resetAll() {
@@ -873,43 +1012,66 @@
         }
 
         function drawSinExcusasCard() {
-            // Manejo de misiones activas (decrementar turnos)
-            if (state.misiones && state.misiones.length > 0) {
-                state.misiones.forEach(m => m.turnos--);
-                const terminadas = state.misiones.filter(m => m.turnos <= 0);
-                state.misiones = state.misiones.filter(m => m.turnos > 0);
-                
-                if (terminadas.length > 0) {
-                    if (!state.misionesTerminadas) state.misionesTerminadas = [];
-                    state.misionesTerminadas.push(...terminadas);
+            // Use lock for multiplayer
+            if (state.roomCode) {
+                withTurnLock(() => internalDrawSinExcusas());
+                return;
+            }
+            internalDrawSinExcusas();
+
+            function internalDrawSinExcusas() {
+                // Manejo de misiones activas (decrementar turnos)
+                if (state.misiones && state.misiones.length > 0) {
+                    state.misiones.forEach(m => m.turnos--);
+                    const terminadas = state.misiones.filter(m => m.turnos <= 0);
+                    state.misiones = state.misiones.filter(m => m.turnos > 0);
+                    
+                    if (terminadas.length > 0) {
+                        if (!state.misionesTerminadas) state.misionesTerminadas = [];
+                        state.misionesTerminadas.push(...terminadas);
+                    }
                 }
-            }
 
-            state.sinexcusas.index++;
-            if (state.sinexcusas.index >= state.sinexcusas.deck.length) {
-                resetSinExcusasDeck();
-                state.sinexcusas.index = 0;
-                showToast('🔄 Mazo mezclado de nuevo');
-            }
-            state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
-            state.sinexcusas.animationClass = 'card-enter';
+                // record drawer index
+                const drawerIdx = state.currentPlayerIndex || 0;
 
-            // Si la nueva carta es misión, agregarla a la lista
-            const currentCard = state.sinexcusas.deck[state.sinexcusas.index];
-            if (currentCard && currentCard.cat === 'mision_oculta') {
-                const match = (currentCard.body || currentCard.text || '').match(/(\d+)\s+turnos?/i);
-                const turnos = match ? parseInt(match[1]) : 3;
-                if (!state.misiones) state.misiones = [];
-                state.misiones.push({
-                    jugador: state.players[state.currentPlayerIndex].name,
-                    texto: currentCard.body || currentCard.text,
-                    turnos: turnos,
-                    idCarta: currentCard.id
-                });
-            }
+                state.sinexcusas.index++;
+                if (state.sinexcusas.index >= state.sinexcusas.deck.length) {
+                    resetSinExcusasDeck();
+                    state.sinexcusas.index = 0;
+                    showToast('🔄 Mazo mezclado de nuevo');
+                }
+                state.sinexcusas.animationClass = 'card-enter';
 
-            saveState();
-            render();
+                // Save last card for drawer
+                try {
+                    const currentCard = state.sinexcusas.deck[state.sinexcusas.index];
+                    const drawer = state.players[drawerIdx];
+                    if (drawer && currentCard) {
+                        if (!state.playerLast) state.playerLast = {};
+                        if (!state.playerLast[drawer.name]) state.playerLast[drawer.name] = {};
+                        state.playerLast[drawer.name].sinexcusas = String(currentCard.id);
+                    }
+                } catch (e) { console.warn('save last sinexcusas', e); }
+
+                // If the new card is a mission, add it (assign to drawer)
+                const currentCard2 = state.sinexcusas.deck[state.sinexcusas.index];
+                if (currentCard2 && currentCard2.cat === 'mision_oculta') {
+                    const match = (currentCard2.body || currentCard2.text || '').match(/(\d+)\s+turnos?/i);
+                    const turnos = match ? parseInt(match[1]) : 3;
+                    if (!state.misiones) state.misiones = [];
+                    state.misiones.push({
+                        jugador: state.players[drawerIdx].name,
+                        texto: currentCard2.body || currentCard2.text,
+                        turnos: turnos,
+                        idCarta: currentCard2.id
+                    });
+                }
+
+                state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
+                saveState();
+                render();
+            }
         }
 
         function toggleSinExcusasCategory(cat) {
@@ -2422,7 +2584,12 @@
             render();
         }
 
-        function drawToxicCard() {
+        async function drawToxicCard() {
+            // En multiplayer, usar lock para avanzar carta
+            if (state.roomCode) {
+                await withTurnLock(() => internalDrawToxic());
+                return;
+            }
             let filteredDeck = TOXIC_CARDS;
             if (!state.toxicCategory.includes('TODAS') && state.toxicCategory.length > 0) {
                 filteredDeck = TOXIC_CARDS.filter(c => state.toxicCategory.includes(c.cat));
@@ -2440,6 +2607,41 @@
             state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
             saveState();
             render();
+
+            // internal draw used by withTurnLock
+            async function internalDrawToxic() {
+                let filtered = TOXIC_CARDS;
+                if (!state.toxicCategory.includes('TODAS') && state.toxicCategory.length > 0) {
+                    filtered = TOXIC_CARDS.filter(c => state.toxicCategory.includes(c.cat));
+                }
+
+                // record drawer before advancing turn
+                const drawerIdx = state.currentPlayerIndex || 0;
+
+                state.toxicIndex++;
+                if (state.toxicIndex >= filtered.length) {
+                    state.toxicDeck = shuffleArray([...filtered]);
+                    state.toxicIndex = 0;
+                    showToast('🔄 Se barajó el mazo nuevamente');
+                } else if (state.toxicIndex === 0) {
+                    state.toxicDeck = shuffleArray([...filtered]);
+                }
+
+                // Save last card for the player who drew
+                try {
+                    const drawer = state.players[drawerIdx];
+                    const card = state.toxicDeck && state.toxicDeck[state.toxicIndex] ? state.toxicDeck[state.toxicIndex] : filtered[state.toxicIndex];
+                    if (drawer && card) {
+                        if (!state.playerLast) state.playerLast = {};
+                        if (!state.playerLast[drawer.name]) state.playerLast[drawer.name] = {};
+                        state.playerLast[drawer.name].toxic = String(card.id);
+                    }
+                } catch (e) { console.warn('save last toxic', e); }
+
+                state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
+                saveState();
+                render();
+            }
         }
 
         function toggleSabioMode() {
@@ -2454,7 +2656,13 @@
             render();
         }
 
-        function drawPokerCard() {
+        async function drawPokerCard() {
+            // En multiplayer, usar lock
+            if (state.roomCode) {
+                await withTurnLock(() => internalDrawPoker());
+                return;
+            }
+
             state.pokerIndex++;
             if (state.pokerIndex >= state.pokerDeck.length || state.pokerIndex === -1) {
                 state.pokerDeck = shuffleArray([...POKER_CARDS]);
@@ -2464,6 +2672,33 @@
             state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
             saveState();
             render();
+
+            async function internalDrawPoker() {
+                // record drawer before advancing turn
+                const drawerIdx = state.currentPlayerIndex || 0;
+
+                state.pokerIndex++;
+                if (state.pokerIndex >= state.pokerDeck.length || state.pokerIndex === -1) {
+                    state.pokerDeck = shuffleArray([...POKER_CARDS]);
+                    state.pokerIndex = 0;
+                    showToast('🔄 Se barajó el mazo nuevamente');
+                }
+
+                // Save last poker card for drawer
+                try {
+                    const drawer = state.players[drawerIdx];
+                    const card = state.pokerDeck && state.pokerDeck[state.pokerIndex] ? state.pokerDeck[state.pokerIndex] : POKER_CARDS[state.pokerIndex];
+                    if (drawer && card) {
+                        if (!state.playerLast) state.playerLast = {};
+                        if (!state.playerLast[drawer.name]) state.playerLast[drawer.name] = {};
+                        state.playerLast[drawer.name].poker = String(card.id);
+                    }
+                } catch (e) { console.warn('save last poker', e); }
+
+                state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
+                saveState();
+                render();
+            }
         }
 
         // ⭐ Toggle Favorito
@@ -2948,18 +3183,10 @@
         }
 
         function conectarSala(code) {
-            if (realtimeChannel) { supabaseClient.removeChannel(realtimeChannel); realtimeChannel = null; }
-            realtimeChannel = supabaseClient.channel('room_' + code)
-                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `code=eq.${code}` }, (payload) => {
-                    const remoteState = payload.new.game_state;
-                    if (remoteState) {
-                        const localUser = state.user;
-                        state = { ...remoteState, user: localUser };
-                        saveState(true);
-                        render();
-                    }
-                })
-                .subscribe();
+            // Use unified subscription implementation
+            if (!supabaseClient) return;
+            if (realtimeChannel) { realtimeChannel.unsubscribe(); realtimeChannel = null; }
+            subscribeToRoom(code);
         }
 
         async function unirseSala() {
@@ -3413,9 +3640,23 @@
                 const finalPlayers = alreadyIn ? gs.players : updatedPlayers;
 
                 if (!alreadyIn) {
-                    await supabaseClient.from('rooms').update({
-                        game_state: { ...gs, players: finalPlayers }
-                    }).eq('code', code);
+                    try {
+                        // Use CAS to avoid race when multiple join at same time
+                        const row = await supabaseClient.from('rooms').select('last_activity, game_state').eq('code', code).single();
+                        const lastActivity = row.data ? row.data.last_activity : null;
+                        const payload = { game_state: { ...gs, players: finalPlayers } };
+                        let updRes;
+                        if (lastActivity) {
+                            updRes = await supabaseClient.from('rooms').update(payload).eq('code', code).eq('last_activity', lastActivity);
+                            if (updRes.error) {
+                                console.warn('joinRoom CAS failed, fallback', updRes.error);
+                                updRes = await supabaseClient.from('rooms').update(payload).eq('code', code);
+                            }
+                        } else {
+                            updRes = await supabaseClient.from('rooms').update(payload).eq('code', code);
+                        }
+                        if (updRes.error) console.warn('joinRoom update error', updRes.error);
+                    } catch (e) { console.warn('joinRoom supabase error', e); }
                 }
 
                 // BUG FIX #1: guardar identidad del dispositivo
@@ -3436,7 +3677,7 @@
             if (!supabaseClient) return;
             if (realtimeChannel) realtimeChannel.unsubscribe();
 
-            realtimeChannel = supabaseClient.channel('room:' + code)
+            realtimeChannel = supabaseClient.channel('room_' + code)
                 .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: 'code=eq.' + code },
                 payload => {
                     const gs = payload.new.game_state;
@@ -3489,8 +3730,26 @@
                 players: state.players,
                 full_state: fullState
             };
-            const { error } = await supabaseClient.from('rooms').update({ game_state: gs }).eq('code', code);
-            if (error) { showToast('❌ Error al iniciar: ' + error.message); return; }
+            try {
+                // CAS update using last_activity
+                const row = await supabaseClient.from('rooms').select('last_activity, game_state').eq('code', code).single();
+                const lastActivity = row.data ? row.data.last_activity : null;
+                const payload = { game_state: gs, last_activity: new Date().toISOString() };
+                let updRes;
+                if (lastActivity) {
+                    updRes = await supabaseClient.from('rooms').update(payload).eq('code', code).eq('last_activity', lastActivity);
+                    if (updRes.error) {
+                        console.warn('startOnlineGame CAS failed, fallback', updRes.error);
+                        updRes = await supabaseClient.from('rooms').update(payload).eq('code', code);
+                    }
+                } else {
+                    updRes = await supabaseClient.from('rooms').update(payload).eq('code', code);
+                }
+                if (updRes.error) { showToast('❌ Error al iniciar: ' + updRes.error.message); return; }
+            } catch (e) {
+                showToast('❌ Error al iniciar: ' + (e.message || e));
+                return;
+            }
 
             // Guardar localmente (sin re-subir)
             saveState(true);
@@ -3712,6 +3971,24 @@
                 modal.classList.remove('hidden');
             }
         }
+
+        // Mostrar la última carta vista por un jugador (tipo 'toxic' o 'poker')
+        window.showPlayerLastCard = function(playerName, type) {
+            if (!state.playerLast || !state.playerLast[playerName]) return showToast('⚠️ No hay carta registrada para ' + playerName);
+            const record = state.playerLast[playerName];
+            if (type === 'toxic' && record.toxic) {
+                previewCard('toxic', String(record.toxic));
+            } else if (type === 'poker' && record.poker) {
+                previewCard('poker', String(record.poker));
+            } else if (!type) {
+                // prefer toxic then poker
+                if (record.toxic) previewCard('toxic', String(record.toxic));
+                else if (record.poker) previewCard('poker', String(record.poker));
+                else showToast('⚠️ No hay carta registrada para ' + playerName);
+            } else {
+                showToast('⚠️ Tipo inválido o sin carta');
+            }
+        };
 
         // Initialize Supabase now that consts are defined
         initSupabase();

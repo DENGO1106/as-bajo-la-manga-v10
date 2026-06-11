@@ -1,0 +1,2989 @@
+
+        // --- Data ---
+
+
+        // --- State Management ---
+        let state = {
+            view: 'menu',
+            // Sistema unificado de jugadores (GLOBAL)
+            players: [],
+            currentPlayerIndex: 0,
+            gameStarted: false,
+
+            // Toxic Cards
+            toxicDeck: [],
+            toxicIndex: -1,
+            toxicCategory: ['TODAS'],
+
+            // O Se Caga
+            
+
+            // Sistema de Papelera (Universal)
+            trash: {
+                toxic: [],
+                sinexcusas: [],
+                poker: []
+            },
+
+            // Poker Caliente
+            pokerDeck: [],
+            pokerIndex: -1,
+
+            // ¿Quién Es Más?
+            quienEsMas: {
+                currentQuestion: null,
+                questionIndex: 0,
+                usedQuestions: [],
+                scores: {}
+            },
+
+            // Bomba de Palabras
+            bomba: {
+                currentCategory: null,
+                categoryIndex: 0,
+                timerDuration: 0,
+                isActive: false,
+                timerInterval: null
+            },
+
+            // Reto en Cadena
+            retoCadena: {
+                currentChain: [],
+                usedRetos: [],
+                currentRound: 1
+            },
+
+            // Dilema del Rey
+            dilemaRey: {
+                currentDilema: null,
+                dilemaIndex: 0,
+                votesA: 0,
+                votesB: 0
+            },
+
+            // Mímica Express
+            mimicaExpress: {
+                currentWord: null,
+                wordIndex: 0,
+                usedWords: [],
+                timeLeft: 20,
+                timerInterval: null,
+                currentActor: null
+            },
+            // Biblioteca
+            libTab: 'toxic',
+            
+            // Papelera Universal
+            trash: {
+                toxic: [], poker: [], sinexcusas: [], quienEsMas: [], bomba: [], cadena: [], dilema: [], mimica: []
+            },
+            
+            // Supabase / Ultima Carta
+            roomState: null,
+            ultimaCarta: null,
+
+            // Otros
+            swipeDirection: null
+        };
+
+        // --- Multiplayer helper: CAS update wrapper ---
+        async function casUpdateRoom(code, payloadOrBuilder, knownLastActivity = null) {
+            const client = (typeof window !== 'undefined' && window.supabaseClient) ? window.supabaseClient : (typeof supabaseClient !== 'undefined' ? supabaseClient : null);
+            if (!client) return { error: 'no supabase' };
+            try {
+                let payload = payloadOrBuilder;
+                if (typeof payloadOrBuilder === 'function') {
+                    const rowRes = await client.from('rooms').select('game_state, last_activity').eq('code', code).single();
+                    const row = rowRes.data || {};
+                    payload = payloadOrBuilder(row);
+                    if (payload === null) return { skipped: true };
+                }
+                const newLast = new Date().toISOString();
+                payload.last_activity = newLast;
+                let res;
+                if (knownLastActivity) {
+                    res = await client.from('rooms').update(payload).eq('code', code).eq('last_activity', knownLastActivity);
+                    if (res.error) {
+                        console.warn('casUpdateRoom CAS failed, fallback', res.error);
+                        res = await client.from('rooms').update(payload).eq('code', code);
+                    }
+                } else {
+                    const rowRes = await client.from('rooms').select('last_activity').eq('code', code).single();
+                    const last = rowRes.data ? rowRes.data.last_activity : null;
+                    if (last) {
+                        res = await client.from('rooms').update(payload).eq('code', code).eq('last_activity', last);
+                        if (res.error) {
+                            console.warn('casUpdateRoom CAS failed, fallback', res.error);
+                            res = await client.from('rooms').update(payload).eq('code', code);
+                        }
+                    } else {
+                        res = await client.from('rooms').update(payload).eq('code', code);
+                    }
+                }
+                return res;
+            } catch (e) {
+                console.warn('casUpdateRoom error', e);
+                return { error: e };
+            }
+        }
+
+        // --- Touch Gesture System ---
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchEndX = 0;
+        let touchEndY = 0;
+        const minSwipeDistance = 50;
+
+        function handleTouchStart(e) {
+            touchStartX = e.changedTouches[0].screenX;
+            touchStartY = e.changedTouches[0].screenY;
+        }
+
+        function handleTouchEnd(e) {
+            touchEndX = e.changedTouches[0].screenX;
+            touchEndY = e.changedTouches[0].screenY;
+            handleSwipe();
+        }
+
+        function handleSwipe() {
+            const diffX = touchEndX - touchStartX;
+            const diffY = touchEndY - touchStartY;
+
+            // Solo procesar swipes horizontales significativos
+            if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > minSwipeDistance) {
+                if (diffX > 0) {
+                    // Swipe right - navegación contextual
+                    onSwipeRight();
+                } else {
+                    // Swipe left - siguiente carta
+                    onSwipeLeft();
+                }
+            }
+        }
+
+        function onSwipeLeft() {
+            vibrate(30);
+            if (state.view === 'toxic' && state.toxicIndex >= 0) {
+                drawToxicCard();
+            } else if (state.view === 'poker' && state.pokerIndex >= 0) {
+                drawPokerCard();
+            
+            }
+        }
+
+        function onSwipeRight() {
+            // Ya no se permite regresar cartas en O Se Caga
+            vibrate(30);
+        }
+
+        // --- Haptic Feedback ---
+        function vibrate(duration = 50) {
+            if ('vibrate' in navigator) {
+                navigator.vibrate(duration);
+            }
+        }
+
+        // --- Enhanced Animations ---
+        function addCardFlipAnimation(element) {
+            if (element) {
+                element.classList.add('card-flip');
+                setTimeout(() => {
+                    element.classList.remove('card-flip');
+                }, 600);
+            }
+        }
+
+        function addShakeAnimation(element) {
+            if (element) {
+                element.classList.add('shake');
+                setTimeout(() => {
+                    element.classList.remove('shake');
+                }, 500);
+            }
+        }
+
+        // --- Toast Notifications ---
+        function showToast(message, duration = 2000) {
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 glass px-6 py-3 rounded-2xl z-50 animate-fade-in text-sm font-bold gold-text';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translate(-50%, 20px)';
+                toast.style.transition = 'all 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, duration);
+        }
+
+        // --- Confetti Effect (for wins) ---
+        function createConfetti() {
+            const colors = ['#FFD700', '#D4AF37', '#B8860B', '#FF6B6B', '#4ECDC4'];
+            const confettiCount = 50;
+
+            for (let i = 0; i < confettiCount; i++) {
+                const confetti = document.createElement('div');
+                confetti.style.cssText = `
+                    position: fixed;
+                    width: 10px;
+                    height: 10px;
+                    background: ${colors[Math.floor(Math.random() * colors.length)]};
+                    left: ${Math.random() * 100}%;
+                    top: -10px;
+                    opacity: 1;
+                    transform: rotate(${Math.random() * 360}deg);
+                    z-index: 9999;
+                    pointer-events: none;
+                    border-radius: 2px;
+                `;
+                document.body.appendChild(confetti);
+
+                const fall = confetti.animate([
+                    { top: '-10px', opacity: 1 },
+                    { top: '100vh', opacity: 0, transform: `rotate(${Math.random() * 720}deg) translateX(${Math.random() * 200 - 100}px)` }
+                ], {
+                    duration: 2000 + Math.random() * 1000,
+                    easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+                });
+
+                fall.onfinish = () => confetti.remove();
+            }
+            vibrate([50, 100, 50]);
+        }
+
+        // Initialize state from storage (hybrid)
+        let savedState = null;
+        try {
+            const savedSession = sessionStorage.getItem('as_bajo_la_manga_state');
+            const savedLocal = localStorage.getItem('as_bajo_la_manga_state');
+            savedState = savedLocal || savedSession;
+        } catch (e) {
+            console.warn("Storage no disponible (posible webview o modo incógnito):", e);
+        }
+        if (savedState) {
+            try {
+                const parsed = JSON.parse(savedState);
+                const baseState = { ...state };
+                state = {
+                    ...baseState,
+                    ...parsed
+                };
+                
+                // Asegurar que las subpropiedades críticas no se pierdan al sobrescribir
+                if (!state.trash) state.trash = {};
+                ['toxic', 'poker', 'sinexcusas', 'quienEsMas', 'bomba', 'cadena', 'dilema', 'mimica'].forEach(k => {
+                    if (!state.trash[k]) state.trash[k] = [];
+                });
+                
+                if (!state.sinexcusas) state.sinexcusas = baseState.sinexcusas;
+                if (state.toxicDeck.length === 0 && TOXIC_CARDS.length > 0) resetToxicDeck();
+                if (state.pokerDeck.length === 0 && POKER_CARDS.length > 0) resetPokerDeck();
+                if (!state.sinexcusas.deck || state.sinexcusas.deck.length === 0) resetSinExcusasDeck();
+            } catch (e) {
+                console.error("Error loading state", e);
+                resetAll();
+            }
+        } else {
+            resetAll();
+        }
+        
+        // Limpiar vistas obsoletas que ya no existen (ej: el sabio del guaro)
+        const validViews = ['welcome','menu','setup','auth','profile','onlineRoom',
+            'toxic','poker','sinexcusas','sinexcusasSetup','quienEsMas','quienEsMasGame',
+            'bomba','retoCadena','dilemaRey','mimicaExpress','ultimaCarta','biblioteca'];
+        if (!validViews.includes(state.view)) {
+            console.warn('Vista guardada no es válida:', state.view, '-> welcome');
+            state.view = 'welcome';
+        }
+
+        // Ruteo inicial: si no hay estado previo o no hay jugadores listos
+        if (!savedState) {
+            state.view = 'welcome';
+        } else if (state.players.length < 2) {
+            state.view = 'welcome';
+        }
+
+        let _inactivityWarningTimer = null;
+        let _inactivityExpireTimer = null;
+        const ROOM_INACTIVITY_MS = 20 * 60 * 1000; // 20 minutos
+        const ROOM_WARNING_MS   = 15 * 60 * 1000; // aviso a los 15 min
+
+        function resetInactivityTimers() {
+            clearTimeout(_inactivityWarningTimer);
+            clearTimeout(_inactivityExpireTimer);
+            _inactivityWarningTimer = setTimeout(() => {
+                if (state.roomCode) showToast('⚠️ La sala expira en 5 minutos por inactividad');
+            }, ROOM_WARNING_MS);
+            _inactivityExpireTimer = setTimeout(() => {
+                if (state.roomCode) {
+                    showToast('⏱️ Sala cerrada por inactividad');
+                    abandonarSala();
+                }
+            }, ROOM_INACTIVITY_MS);
+        }
+
+        async function saveState(isRemote = false) {
+            if (state.user) {
+                localStorage.setItem('as_bajo_la_manga_state', JSON.stringify(state));
+                sessionStorage.removeItem('as_bajo_la_manga_state');
+            } else {
+                sessionStorage.setItem('as_bajo_la_manga_state', JSON.stringify(state));
+                localStorage.removeItem('as_bajo_la_manga_state');
+            }
+            if (state.roomCode && !isRemote && window.supabaseClient) {
+                const stateToSync = { ...state };
+                delete stateToSync.user;
+                try {
+                    const row = await window.supabaseClient.from('rooms').select('last_activity').eq('code', state.roomCode).single();
+                    const lastActivity = row.data ? row.data.last_activity : null;
+                    const newLast = new Date().toISOString();
+                    const payload = { game_state: stateToSync, last_activity: newLast };
+                    let res;
+                    if (lastActivity) {
+                        res = await window.supabaseClient.from('rooms').update(payload).eq('code', state.roomCode).eq('last_activity', lastActivity);
+                        if (res.error) {
+                            console.warn('saveState CAS failed, falling back:', res.error);
+                            res = await window.supabaseClient.from('rooms').update(payload).eq('code', state.roomCode);
+                        }
+                    } else {
+                        res = await window.supabaseClient.from('rooms').update(payload).eq('code', state.roomCode);
+                    }
+                    if (res.error) console.error('Supabase sync error:', res.error);
+                } catch (e) { console.warn('saveState supabase error', e); }
+                resetInactivityTimers();
+            }
+        }
+
+        // --- Utilidades ---
+                            const res = await casUpdateRoom(state.roomCode, { game_state: stateToSync });
+                            if (res && res.error) console.error('Supabase sync error:', res.error);
+            resetPokerDeck();
+            resetSinExcusasDeck();
+            state.view = 'menu';
+            saveState();
+        }
+
+        function resetToxicDeck() {
+            if (!state.toxicCategory) state.toxicCategory = ['TODAS'];
+            let filtered = TOXIC_CARDS.filter(c => !state.trash.toxic.includes(String(c.id)));
+            
+            // Filtrar por categorías seleccionadas (si no es TODAS)
+            if (!state.toxicCategory.includes('TODAS') && state.toxicCategory.length > 0) {
+                filtered = filtered.filter(c => state.toxicCategory.includes(c.cat));
+            }
+            
+            state.toxicDeck = shuffleArray([...filtered]);
+            state.toxicIndex = -1;
+        }
+
+        window.toggleToxicCategory = function(cat) {
+            if (!state.toxicCategory) state.toxicCategory = ['TODAS'];
+            if (cat === 'TODAS') {
+                state.toxicCategory = ['TODAS'];
+            } else {
+                if (state.toxicCategory.includes('TODAS')) {
+                    state.toxicCategory = [cat];
+                } else {
+                    if (state.toxicCategory.includes(cat)) {
+                        state.toxicCategory = state.toxicCategory.filter(c => c !== cat);
+                        if (state.toxicCategory.length === 0) {
+                            state.toxicCategory = ['TODAS'];
+                        }
+                    } else {
+                        state.toxicCategory.push(cat);
+                    }
+                }
+            }
+            resetToxicDeck();
+            saveState();
+            render();
+        };
+
+        function resetPokerDeck() {
+            const filtered = POKER_CARDS.filter(c => !state.trash.poker.includes(String(c.id)));
+            state.pokerDeck = shuffleArray([...filtered]);
+            state.pokerIndex = -1;
+        }
+
+        function resetSinExcusasDeck() {
+            if (!state.sinexcusas) state.sinexcusas = { deck: [], index: -1, category: ['TODAS'], animationClass: '' };
+            if (!state.trash.sinexcusas) state.trash.sinexcusas = [];
+            let filtered = SIN_EXCUSAS_CARDS.filter(c => !state.trash.sinexcusas.includes(String(c.id)));
+            if (!state.sinexcusas.category.includes('TODAS') && state.sinexcusas.category.length > 0) {
+                filtered = filtered.filter(c => state.sinexcusas.category.includes(c.cat));
+            }
+            state.sinexcusas.deck = shuffleArray([...filtered]);
+            state.sinexcusas.index = -1;
+        }
+
+        function startSinExcusas() {
+            resetSinExcusasDeck();
+            state.sinexcusas.index = 0;
+            state.currentPlayerIndex = 0;
+            state.sinexcusas.animationClass = 'card-enter';
+            saveState();
+            render();
+        }
+
+        function drawSinExcusasCard() {
+            state.sinexcusas.index++;
+            if (state.sinexcusas.index >= state.sinexcusas.deck.length) {
+                resetSinExcusasDeck();
+                state.sinexcusas.index = 0;
+                showToast('🔄 Mazo mezclado de nuevo');
+            }
+            state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
+            state.sinexcusas.animationClass = 'card-enter';
+            saveState();
+            render();
+        }
+
+        function toggleSinExcusasCategory(cat) {
+            if (!state.sinexcusas.category) state.sinexcusas.category = ['TODAS'];
+            if (cat === 'TODAS') {
+                state.sinexcusas.category = ['TODAS'];
+            } else {
+                state.sinexcusas.category = state.sinexcusas.category.filter(c => c !== 'TODAS');
+                if (state.sinexcusas.category.includes(cat)) {
+                    state.sinexcusas.category = state.sinexcusas.category.filter(c => c !== cat);
+                    if (state.sinexcusas.category.length === 0) state.sinexcusas.category = ['TODAS'];
+                } else {
+                    state.sinexcusas.category.push(cat);
+                }
+            }
+            saveState();
+            render();
+        }
+
+
+
+        // --- Sistema de Papelera ---
+        function moverAPapelera(juego, id) {
+            if (!state.trash) state.trash = { toxic: [], poker: [], sinexcusas: [], quienEsMas: [], bomba: [], cadena: [], dilema: [], mimica: [] };
+            if (!state.trash[juego].includes(String(id))) {
+                state.trash[juego].push(String(id));
+                saveState();
+                showToast('🗑️ Movido a la papelera');
+                if (state.view === 'biblioteca') { filterLib(); vibrate(30); }
+            }
+        }
+
+        function restaurarDePapelera(juego, id) {
+            if (!state.trash || !state.trash[juego]) return;
+            state.trash[juego] = state.trash[juego].filter(item => item !== String(id));
+            saveState();
+            showToast('♻️ Restaurado con éxito');
+            if (state.view === 'biblioteca') { filterLib(); vibrate(30); }
+        }
+
+        function getRandomCard() {
+            const suits = ['♥️', '♦️', '♣️', '♠️'];
+            const ranks = ['As', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+            const suit = suits[Math.floor(Math.random() * suits.length)];
+            const rank = ranks[Math.floor(Math.random() * ranks.length)];
+            return { rank, suit, id: `${rank}${suit}` };
+        }
+
+        // --- Render Functions ---
+
+
+
+        // --- EXTRA GAMES DATA ---
+        const CATEGORIAS_BOMBA = ["Pa├¡ses de Europa", "Marcas de coche", "Pel├¡culas de Disney", "Frutas tropicales", "Superh├®roes de Marvel", "Capitales del mundo", "Instrumentos musicales", "Deportes ol├¡mpicos", "Tipos de pasta", "Animales marinos", "Colores en espa├▒ol", "Marcas de ropa", "R├¡os del mundo", "Monta├▒as famosas", "Presidentes de USA", "Planetas sistema solar", "Tipos de queso", "Bebidas alcoh├│licas", "Postres famosos", "Razas de perro", "Idiomas del mundo", "Monumentos famosos", "Ciudades de Espa├▒a", "├ürboles comunes", "Flores populares", "Tipos de sushi", "Marcas de tecnolog├¡a", "Redes sociales", "G├®neros musicales", "Pel├¡culas de Pixar", "Series de Netflix", "Videojuegos famosos", "Superh├®roes de DC", "Pa├¡ses de Asia", "Pa├¡ses de Am├®rica", "Pa├¡ses de ├üfrica", "Elementos qu├¡micos", "Huesos del cuerpo", "├ôrganos del cuerpo", "Profesiones", "Herramientas", "Utensilios de cocina", "Tipos de pan", "Tipos de caf├®", "Cocteles cl├ísicos", "Bailes latinos", "Estilos de m├║sica", "Equipos de f├║tbol", "Aerol├¡neas", "Marcas de refresco"];
+        const QUIEN_ES_MAS = ["┬┐Qui├®n es m├ís probable que se emborrache primero?", "┬┐Qui├®n es m├ís probable que olvide esta noche?", "┬┐Qui├®n es m├ís probable que se case primero?", "┬┐Qui├®n es m├ís probable que tenga m├ís hijos?", "┬┐Qui├®n es m├ís probable que se haga famoso?", "┬┐Qui├®n es m├ís probable que se vaya a vivir al extranjero?", "┬┐Qui├®n es m├ís probable que termine en la c├írcel?", "┬┐Qui├®n es m├ís probable que gane la loter├¡a?", "┬┐Qui├®n es m├ís probable que olvide un cumplea├▒os?", "┬┐Qui├®n es m├ís probable que llore viendo una pel├¡cula?", "┬┐Qui├®n es m├ís probable que se convierta en millonario?", "┬┐Qui├®n es m├ís probable que aparezca en las noticias?", "┬┐Qui├®n es m├ís probable que tenga una relaci├│n secreta?", "┬┐Qui├®n es m├ís probable que se vuelva vegetariano?", "┬┐Qui├®n es m├ís probable que sobreviva a un apocalipsis zombie?", "┬┐Qui├®n es m├ís probable que se pierda en su ciudad?", "┬┐Qui├®n es m├ís probable que invente algo revolucionario?", "┬┐Qui├®n es m├ís probable que adopte 10 gatos?", "┬┐Qui├®n es m├ís probable que se una a un reality show?", "┬┐Qui├®n es m├ís probable que escriba un libro?", "┬┐Qui├®n es m├ís probable que se haga tatuajes?", "┬┐Qui├®n es m├ís probable que olvide d├│nde estacion├│?", "┬┐Qui├®n es m├ís probable que se enamore de su amigo?", "┬┐Qui├®n es m├ís probable que tenga romance de oficina?", "┬┐Qui├®n es m├ís probable que se convierta en YouTuber?", "┬┐Qui├®n es m├ís probable que gane un premio?", "┬┐Qui├®n es m├ís probable que se mude a una isla?", "┬┐Qui├®n es m├ís probable que sea minimalista?", "┬┐Qui├®n es m├ís probable que se convierta en chef?", "┬┐Qui├®n es m├ís probable que salga en revista?", "┬┐Qui├®n es m├ís probable que organice fiestas?", "┬┐Qui├®n es m├ís probable que se levante primero?", "┬┐Qui├®n es m├ís probable que duerma hasta el mediod├¡a?", "┬┐Qui├®n es m├ís probable que rompa su tel├®fono?", "┬┐Qui├®n es m├ís probable que tarde en arreglarse?", "┬┐Qui├®n es m├ís probable que sea stripper por una noche?", "┬┐Qui├®n es m├ís probable que sea adicto a redes?", "┬┐Qui├®n es m├ís probable que haga viaje improvisado?", "┬┐Qui├®n es m├ís probable que cambie de carrera?", "┬┐Qui├®n es m├ís probable que sea padrino/madrina?", "┬┐Qui├®n es m├ís probable que tenga m├ís ex parejas?", "┬┐Qui├®n es m├ís probable que mienta sobre su edad?", "┬┐Qui├®n es m├ís probable que sea el m├ís dram├ítico?", "┬┐Qui├®n es m├ís probable que tenga romance de verano?", "┬┐Qui├®n es m├ís probable que sea adicto al gym?", "┬┐Qui├®n es m├ís probable que sea el alma de la fiesta?", "┬┐Qui├®n es m├ís probable que sea millonario a los 30?", "┬┐Qui├®n es m├ís probable que tenga mascota rara?", "┬┐Qui├®n es m├ís probable que se pierda en un mall?", "┬┐Qui├®n es m├ís probable que gane concurso de baile?", "┬┐Qui├®n es m├ís probable que tenga hijos primero?", "┬┐Qui├®n es m├ís probable que viva con sus padres?", "┬┐Qui├®n es m├ís probable que tenga accidente tonto?", "┬┐Qui├®n es m├ís probable que sea influencer?", "┬┐Qui├®n es m├ís probable que diga 'te lo dije'?", "┬┐Qui├®n es m├ís probable que sea el m├ís taca├▒o?", "┬┐Qui├®n es m├ís probable que sea el m├ís generoso?", "┬┐Qui├®n es m├ís probable que tenga m├ís seguidores?", "┬┐Qui├®n es m├ís probable que sea arrestado?", "┬┐Qui├®n es m├ís probable que gaste todo en un d├¡a?", "┬┐Qui├®n es m├ís probable que sea presidente?", "┬┐Qui├®n es m├ís probable que sea mejor padre/madre?", "┬┐Qui├®n es m├ís probable que haga paracaidismo?", "┬┐Qui├®n es m├ís probable que sea el m├ís chismoso?", "┬┐Qui├®n es m├ís probable que llore en p├║blico?", "┬┐Qui├®n es m├ís probable que se haga cirug├¡a?", "┬┐Qui├®n es m├ís probable que viva en 10 pa├¡ses?", "┬┐Qui├®n es m├ís probable que cambie de look?", "┬┐Qui├®n es m├ís probable que se convierta en vegano?", "┬┐Qui├®n es m├ís probable que sea el m├ís rom├íntico?", "┬┐Qui├®n es m├ís probable que tenga doble vida?", "┬┐Qui├®n es m├ís probable que cante mal en karaoke?", "┬┐Qui├®n es m├ís probable que sea mal cocinero?", "┬┐Qui├®n es m├ís probable que se convierta en ermita├▒o?", "┬┐Qui├®n es m├ís probable que sea DJ?", "┬┐Qui├®n es m├ís probable que sea modelo?", "┬┐Qui├®n es m├ís probable que tenga accidentes de coche?", "┬┐Qui├®n es m├ís probable que olvide cumplea├▒os de pareja?", "┬┐Qui├®n es m├ís probable que se duerma en lugares raros?", "┬┐Qui├®n es m├ís probable que tenga colecci├│n extra├▒a?", "┬┐Qui├®n es m├ís probable que sea adicto al caf├®?", "┬┐Qui├®n es m├ís probable que gane concurso de comida?", "┬┐Qui├®n es m├ís probable que sea el m├ís celoso?", "┬┐Qui├®n es m├ís probable que tenga miedo a alturas?", "┬┐Qui├®n es m├ís probable que sea actor/actriz?", "┬┐Qui├®n es m├ís probable que tenga varias parejas?", "┬┐Qui├®n es m├ís probable que sea dram├ítico por enfermedad?", "┬┐Qui├®n es m├ís probable que pierda su billetera?", "┬┐Qui├®n es m├ís probable que grite en monta├▒a rusa?", "┬┐Qui├®n es m├ís probable que sea el m├ís supersticioso?", "┬┐Qui├®n es m├ís probable que crea en extraterrestres?", "┬┐Qui├®n es m├ís probable que tenga banda de m├║sica?", "┬┐Qui├®n es m├ís probable que sea impuntual?", "┬┐Qui├®n es m├ís probable que sea organizado?", "┬┐Qui├®n es m├ís probable que se enamore a primera vista?", "┬┐Qui├®n es m├ís probable que tenga romance prohibido?", "┬┐Qui├®n es m├ís probable que se case ├║ltimo?", "┬┐Qui├®n es m├ís probable que tenga gemelos?"];
+        const MICRO_RETOS = ["Aplaude 3 veces", "Gui├▒a un ojo", "Toca tu nariz", "Gira en tu sitio", "Salta en un pie", "Haz una reverencia", "Silba 2 segundos", "Toca oreja izquierda", "Levanta mano derecha", "Di 'Hola' en ingl├®s", "Chasquea dedos", "Toca el suelo", "Palmada en mesa", "Saca la lengua", "Cierra un ojo", "Levanta un pie", "Toca tu cabeza", "Aplaude despacio", "Sopla al aire", "Mueve las cejas", "Pesta├▒ea r├ípido", "Haz cara seria", "Sonr├¡e grande", "Frunce el ce├▒o", "Cruza los brazos", "Manos en cintura", "Se├▒ala arriba", "Se├▒ala abajo", "C├¡rculo con dedo", "Toca tu barbilla", "Toca tu hombro", "Rasca tu cabeza", "Toca tu rodilla", "Aplaude arriba cabeza", "Palmada en pierna", "Toca tu pie", "Saludo militar", "Reverencia japonesa", "Gesto de llamar", "Se├▒al de OK", "Pulgar arriba", "Pulgar abajo", "Se├▒al de paz", "Coraz├│n con manos", "Gesto de dinero", "Gesto de silencio", "Gesto de no s├®", "Gesto de pensar", "Gesto de sorpresa", "Gesto aburrido", "Gesto cansado", "Gesto hambre", "Gesto sed", "Gesto fr├¡o", "Gesto calor", "Gesto miedo", "Gesto feliz", "Gesto triste", "Gesto enojado", "Gesto enamorado"];
+        const DILEMAS_REY = [{ "a": "Pizza el resto de tu vida", "b": "Nunca comer queso" }, { "a": "Poder volar", "b": "Ser invisible" }, { "a": "Leer mentes", "b": "Ver el futuro" }, { "a": "Vivir sin m├║sica", "b": "Vivir sin pel├¡culas" }, { "a": "Perder recuerdos", "b": "No crear nuevos" }, { "a": "Rico pero solo", "b": "Pobre con amor" }, { "a": "Siempre verdad", "b": "Siempre mentir" }, { "a": "Hablar con animales", "b": "Hablar todos idiomas" }, { "a": "Teletransportarse", "b": "Viajar en tiempo" }, { "a": "Vivir 1000 a├▒os", "b": "10 vidas de 100" }, { "a": "Sin internet", "b": "Sin televisi├│n" }, { "a": "Famoso odiado", "b": "Desconocido amado" }, { "a": "Perder memoria anual", "b": "Nunca dormir bien" }, { "a": "Sin brazos", "b": "Sin piernas" }, { "a": "Inteligente feo", "b": "Guapo tonto" }, { "a": "Vivir en pasado", "b": "Vivir en futuro" }, { "a": "Respirar bajo agua", "b": "Volar" }, { "a": "10 millones", "b": "Amor verdadero" }, { "a": "Inmortal", "b": "Juventud eterna" }, { "a": "Sin dulce", "b": "Sin salado" }, { "a": "Sin celular", "b": "Sin computadora" }, { "a": "Casarte con crush", "b": "1 mill├│n d├│lares" }, { "a": "Tama├▒o rat├│n", "b": "Tama├▒o elefante" }, { "a": "Nunca mentir", "b": "Nunca saber mentiras" }, { "a": "Comida fr├¡a", "b": "Comida caliente" }, { "a": "Isla desierta", "b": "Ciudad sobrepoblada" }, { "a": "Super fuerza", "b": "Super velocidad" }, { "a": "Presidente", "b": "Multimillonario" }, { "a": "Perder gusto", "b": "Perder olfato" }, { "a": "Hablar cantando", "b": "Hablar gritando" }, { "a": "50 hijos", "b": "Nunca tener hijos" }, { "a": "Comer con manos", "b": "Palillos chinos" }, { "a": "Genio solo", "b": "Tonto con amigos" }, { "a": "Controlar fuego", "b": "Controlar agua" }, { "a": "Vivir en espacio", "b": "Vivir bajo mar" }, { "a": "Siempre fr├¡o", "b": "Siempre calor" }, { "a": "Dormir 2 horas", "b": "Dormir 20 horas" }, { "a": "Sudar miel", "b": "Llorar chocolate" }, { "a": "3 ojos", "b": "3 brazos" }, { "a": "Sin redes sociales", "b": "Sin ver amigos" }, { "a": "Adicto ejercicio", "b": "Adicto comida chatarra" }, { "a": "Sin verano", "b": "Sin invierno" }, { "a": "Piel de cocodrilo", "b": "Pelo de le├│n" }, { "a": "Llorar sangre", "b": "Sudar aceite" }, { "a": "Ser vampiro", "b": "Ser hombre lobo" }, { "a": "Rayos X en ojos", "b": "Ser el├ístico" }, { "a": "100 a├▒os pasado", "b": "100 a├▒os futuro" }, { "a": "Ser ciego", "b": "Ser sordo" }, { "a": "10 dedos por mano", "b": "Sin pulgares" }, { "a": "Curar a otros", "b": "Inmune a todo" }, { "a": "Cola dinosaurio", "b": "Cuernos de toro" }, { "a": "Hablar con fantasmas", "b": "Ver futuro en sue├▒os" }, { "a": "Famoso TikTok", "b": "Famoso YouTube" }, { "a": "Olvidar pasado", "b": "No crear recuerdos" }, { "a": "Adicto trabajo", "b": "Nunca trabajar" }, { "a": "100 gatos", "b": "100 perros" }, { "a": "Cambiar de sexo", "b": "Cambiar de edad" }, { "a": "WiFi gratis", "b": "Gasolina gratis" }, { "a": "Saber fecha muerte", "b": "Saber c├│mo morir" }, { "a": "Mejor en todo solo", "b": "Mediocre con amigos" }, { "a": "Sin dolor", "b": "Sin miedo" }, { "a": "Ser robot", "b": "Ser cyborg" }, { "a": "1 diente gigante", "b": "100 dientes peque├▒os" }, { "a": "Controlar clima", "b": "Controlar tiempo" }, { "a": "Rey pa├¡s pobre", "b": "Ciudadano pa├¡s rico" }, { "a": "Sin electricidad", "b": "Sin agua corriente" }, { "a": "Orejas elefante", "b": "Trompa elefante" }, { "a": "Invisible mudo", "b": "Volar lento" }, { "a": "Vivir 500 enfermo", "b": "Vivir 50 saludable" }, { "a": "Pelo cambia color", "b": "Ojos cambian color" }, { "a": "Adicto dormir", "b": "Insomne siempre" }, { "a": "U├▒as crecen 1cm/d├¡a", "b": "Pelo crece 1cm/d├¡a" }, { "a": "Multiplicarte", "b": "Dividirte en dos" }];
+
+        const views = {
+            onlineRoom: () => `
+                <div class="space-y-6 animate-fade-in py-4">
+                    <div class="text-center space-y-2">
+                        <div style="font-size:3rem;">🌐</div>
+                        <h2 class="text-3xl font-black gradient-gold uppercase">Multijugador</h2>
+                        <p class="text-slate-400 text-sm">Sincroniza todos los juegos en vivo</p>
+                    </div>
+
+                    ${state.roomCode ? `
+                    <div class="glass p-6 rounded-3xl border border-emerald-500/20 text-center space-y-4 shadow-[0_0_20px_rgba(16,185,129,0.1)]">
+                        <p class="text-emerald-400 font-bold uppercase tracking-widest text-xs">Conectado a Sala</p>
+                        <div class="room-code-display text-5xl font-black tracking-[0.2em] text-emerald-400 drop-shadow-md">
+                            ${state.roomCode}
+                        </div>
+                        <p class="text-slate-400 text-sm">Cualquier juego que abras se sincronizará con todos los de esta sala al instante.</p>
+                        
+                        <div class="grid grid-cols-2 gap-3 mt-4">
+                            <button onclick="changeView('menu')" class="bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-3 rounded-xl font-bold touch-feedback ripple text-white">
+                                Jugar Ahora
+                            </button>
+                            <button onclick="abandonarSala()" class="bg-red-500/10 text-red-400 border border-red-500/30 px-4 py-3 rounded-xl font-bold touch-feedback ripple">
+                                Desconectar
+                            </button>
+                        </div>
+                    </div>
+                    ` : `
+                    <div class="glass p-6 rounded-3xl border border-white/10 space-y-6">
+                        <button onclick="crearSala()" class="w-full p-4 rounded-2xl font-black text-slate-950 text-lg uppercase shadow-xl touch-feedback ripple" style="background:linear-gradient(135deg,#10b981,#059669);">
+                            Crear Nueva Sala
+                        </button>
+                        
+                        <div class="relative flex items-center py-2">
+                            <div class="flex-grow border-t border-slate-700"></div>
+                            <span class="flex-shrink-0 mx-4 text-slate-500 text-sm font-bold uppercase">o únete a una</span>
+                            <div class="flex-grow border-t border-slate-700"></div>
+                        </div>
+
+                        <div class="flex gap-2">
+                            <input type="text" id="room-code-input" placeholder="Código de 6 dígitos" 
+                                   class="flex-1 bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-center font-mono tracking-widest text-lg"
+                                   maxlength="6">
+                            <button onclick="unirseSala()" class="glass bg-white/5 border border-white/10 px-6 py-3 rounded-xl font-bold touch-feedback ripple hover:bg-white/10 text-emerald-400">
+                                Entrar
+                            </button>
+                        </div>
+                    </div>
+                    `}
+                    
+                    <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-white touch-feedback mt-6">
+                        Volver al Menú
+                    </button>
+                </div>
+            `,
+            welcome: () => `
+                <div class="space-y-8 animate-fade-in py-8 flex flex-col items-center justify-center min-h-[70vh]">
+                    <div class="text-center space-y-4">
+                        <div style="font-size:4rem;" class="mb-4">🃏</div>
+                        <h1 class="text-4xl font-black gradient-gold uppercase tracking-tighter">As Bajo La Manga</h1>
+                        <p class="text-slate-400 text-lg">Elige cómo quieres entrar al juego</p>
+                    </div>
+
+                    <div class="w-full max-w-sm space-y-4">
+                        <button onclick="changeView('auth')" class="w-full p-4 rounded-2xl font-black text-slate-950 text-lg shadow-xl touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                            🔐 Iniciar con Cuenta
+                        </button>
+                        
+                        <div class="relative flex items-center py-2">
+                            <div class="flex-grow border-t border-slate-700"></div>
+                            <span class="flex-shrink-0 mx-4 text-slate-500 text-sm font-bold uppercase">o</span>
+                            <div class="flex-grow border-t border-slate-700"></div>
+                        </div>
+
+                        <button onclick="changeView('setup')" class="w-full glass p-4 rounded-2xl font-bold text-white border border-white/10 touch-feedback ripple">
+                            👤 Jugar como Invitado
+                        </button>
+                    </div>
+                </div>
+            `,
+
+            profile: () => `
+                <div class="space-y-6 animate-fade-in py-4">
+                    <div class="text-center space-y-2">
+                        <div style="font-size:3rem;">👤</div>
+                        <h2 class="text-3xl font-black gradient-gold uppercase">Mi Perfil</h2>
+                        <p class="text-slate-400 text-sm font-bold text-amber-400">@${state.user?.email?.split('@')[0] || 'usuario'}</p>
+                    </div>
+
+                    <div class="glass p-6 rounded-3xl border border-white/10 space-y-4">
+                        <h3 class="font-bold text-lg text-white mb-2">Mis Jugadores Frecuentes</h3>
+                        
+                        <div class="flex gap-2 mb-4">
+                            <input type="text" id="profilePlayerInput"
+                                   placeholder="Nombre del jugador"
+                                   class="flex-1 bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                   onkeypress="if(event.key==='Enter') addProfilePlayer()" />
+                            <button onclick="addProfilePlayer()" class="bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-3 rounded-xl font-bold touch-feedback ripple">➕</button>
+                        </div>
+
+                        <div class="space-y-2 max-h-[300px] overflow-y-auto">
+                            ${(state.user?.user_metadata?.saved_players || []).length === 0
+                                ? '<div class="text-center text-slate-500 py-4">No tienes jugadores guardados</div>'
+                                : (state.user?.user_metadata?.saved_players || []).map((p, i) => `
+                                <div class="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl">
+                                    <div class="flex items-center gap-3">
+                                        <span class="text-xl">${['🔵','🟢','🟡','🔴','🟣','🟠'][i % 6]}</span>
+                                        <span class="font-bold">${p.name}</span>
+                                    </div>
+                                    <button onclick="removeProfilePlayer(${i})" class="text-red-500 hover:text-red-400 px-3 py-1 rounded-lg touch-feedback">✕</button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <button onclick="startWithProfilePlayers()" class="w-full p-4 rounded-2xl font-black text-slate-950 touch-feedback ripple ${((state.user?.user_metadata?.saved_players || []).length >= 2) ? '' : 'opacity-50 pointer-events-none'}" style="background:linear-gradient(135deg,#10b981,#059669);">
+                            ▶️ Jugar con estos jugadores
+                        </button>
+
+                        <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-white touch-feedback">
+                            Volver al Menú
+                        </button>
+
+                        <button onclick="signOutSupabase()" class="w-full glass bg-red-500/10 text-red-400 border border-red-500/30 p-4 rounded-2xl font-bold touch-feedback ripple mt-4">
+                            Cerrar Sesión
+                        </button>
+                    </div>
+                </div>
+            `,
+            menu: () => `
+                <div class="space-y-4 animate-fade-in py-4">
+
+                    <!-- Profile Button -->
+                    <button onclick="changeView(state.user ? 'profile' : 'welcome')" class="absolute top-4 right-4 glass p-2 rounded-xl text-xl touch-feedback border z-50 ${state.user ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' : 'border-amber-500/20 text-amber-400'}">
+                        ${state.user ? '👤' : '🔐'}
+                    </button>
+                    <!-- Jugadores activos -->
+                    <button onclick="changeView('setup')" class="w-full glass p-4 rounded-2xl flex items-center gap-4 border-white/10 btn-hover ripple touch-feedback">
+                        <div class="flex gap-1">
+                            ${(state.players || []).slice(0,5).map((_,i) => `<span class="text-xl">${['🔵','🟢','🟡','🔴','🟣','🟠'][i % 6]}</span>`).join('')}
+                            ${state.players.length > 5 ? `<span class="text-xs text-slate-400 self-center">+${state.players.length - 5}</span>` : ''}
+                        </div>
+                        <div class="text-left flex-1">
+                            <p class="text-xs text-slate-500 uppercase tracking-widest font-bold">Jugadores</p>
+                            <p class="text-sm font-bold text-white">${(state.players || []).map(p => p.name).join(', ')}</p>
+                        </div>
+                        <span class="text-slate-500 text-sm">✏️</span>
+                    </button>
+
+                    <!-- Modo Multijugador Global -->
+                    <button onclick="changeView('onlineRoom')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-emerald-500/20 ripple touch-feedback mt-4 relative overflow-hidden">
+                        <div class="bg-emerald-500/20 p-4 rounded-2xl group-hover:bg-emerald-500/30 transition-colors">
+                            <span class="text-2xl">${state.roomCode ? '🟢' : '🌐'}</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold ${state.roomCode ? 'text-emerald-400' : 'text-emerald-500'}">SALA MULTIJUGADOR</h2>
+                            <p class="text-slate-400 text-sm">${state.roomCode ? 'Conectado: ' + state.roomCode : 'Sincroniza pantallas en vivo'}</p>
+                        </div>
+                    </button>
+
+                    <!-- Juegos de Cartas -->
+                    <div class="text-sm uppercase tracking-widest text-slate-500 font-bold px-2 mt-2">🃏 Juegos de Cartas</div>
+                    
+                    <button onclick="changeView('toxic')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-amber-500/20 ripple touch-feedback">
+                        <div class="bg-amber-500/20 p-4 rounded-2xl group-hover:bg-amber-500/30 transition-colors">
+                            <span class="text-2xl">🔥</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold gold-text">TOXIC CARDS</h2>
+                            <p class="text-slate-400 text-sm">Verdades y retos picantes</p>
+                        </div>
+                    </button>
+
+                    <button onclick="changeView('poker')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-red-500/20 ripple touch-feedback">
+                        <div class="bg-red-500/20 p-4 rounded-2xl group-hover:bg-red-500/30 transition-colors">
+                            <span class="text-2xl">🃏</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-red-500">POKER CALIENTE</h2>
+                            <p class="text-slate-400 text-sm">Dinámicas con baraja</p>
+                        </div>
+                    </button>
+
+                    <button onclick="changeView('sinexcusas')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-cyan-500/20 ripple touch-feedback">
+                        <div class="bg-cyan-500/20 p-4 rounded-2xl group-hover:bg-cyan-500/30 transition-colors">
+                            <span class="text-2xl">🍻</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-cyan-400">SIN EXCUSAS</h2>
+                            <p class="text-slate-400 text-sm">Retos, misiones y castigos</p>
+                        </div>
+                    </button>
+
+                    <!-- Juegos de Grupo Nuevos -->
+                    <div class="text-sm uppercase tracking-widest text-slate-500 font-bold px-2 mt-8">👥 Juegos de Grupo</div>
+
+                    <button onclick="changeView('quienEsMas')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-amber-500/20 ripple touch-feedback">
+                        <div class="bg-amber-500/20 p-4 rounded-2xl group-hover:bg-amber-500/30 transition-colors">
+                            <span class="text-2xl">🏆</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-amber-400">¿QUIÉN ES MÁS...?</h2>
+                            <p class="text-slate-400 text-sm">Todos votan, el más votado bebe</p>
+                        </div>
+                    </button>
+
+                    <button onclick="changeView('bomba')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-red-500/20 ripple touch-feedback">
+                        <div class="bg-red-500/20 p-4 rounded-2xl group-hover:bg-red-500/30 transition-colors">
+                            <span class="text-2xl">💣</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-red-500">BOMBA DE PALABRAS</h2>
+                            <p class="text-slate-400 text-sm">Di palabras antes que explote</p>
+                        </div>
+                    </button>
+
+                    <button onclick="changeView('retoCadena')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-blue-500/20 ripple touch-feedback">
+                        <div class="bg-blue-500/20 p-4 rounded-2xl group-hover:bg-blue-500/30 transition-colors">
+                            <span class="text-2xl">⛓️</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-blue-400">RETO EN CADENA</h2>
+                            <p class="text-slate-400 text-sm">Repite y añade un reto</p>
+                        </div>
+                    </button>
+
+                    <button onclick="changeView('dilemaRey')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-purple-500/20 ripple touch-feedback">
+                        <div class="bg-purple-500/20 p-4 rounded-2xl group-hover:bg-purple-500/30 transition-colors">
+                            <span class="text-2xl">👑</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-purple-400">DILEMA DEL REY</h2>
+                            <p class="text-slate-400 text-sm">La minoría bebe</p>
+                        </div>
+                    </button>
+
+                    <button onclick="changeView('mimicaExpress')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-pink-500/20 ripple touch-feedback">
+                        <div class="bg-pink-500/20 p-4 rounded-2xl group-hover:bg-pink-500/30 transition-colors">
+                            <span class="text-2xl">🎭</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-pink-400">MÍMICA EXPRESS</h2>
+                            <p class="text-slate-400 text-sm">20 segundos para actuar</p>
+                        </div>
+                    </button>
+
+
+                    <!-- La Ultima Carta -->
+                    <button onclick="changeView('ultimaCarta')" class="game-card group touch-feedback relative overflow-hidden glass rounded-3xl p-6 border-amber-500/20">
+                        <div class="absolute -right-4 -top-4 text-6xl opacity-10 group-hover:rotate-12 transition-transform duration-500">🃏</div>
+                        <div class="flex items-center justify-between mb-4">
+                            <span class="text-4xl filter drop-shadow-[0_0_10px_rgba(245,158,11,0.5)]">🃏</span>
+                            <span class="bg-amber-500/20 text-amber-400 text-[10px] font-black px-3 py-1 rounded-full border border-amber-500/30 uppercase tracking-widest shadow-[0_0_10px_rgba(245,158,11,0.3)]">
+                                VIP
+                            </span>
+                        </div>
+                        <div class="text-left relative z-10">
+                            <h2 class="text-2xl font-black text-white mb-2 uppercase tracking-tight group-hover:text-amber-400 transition-colors">La Última Carta</h2>
+                            <p class="text-slate-400 text-sm font-medium leading-relaxed">El clásico juego de apuestas, ahora online y presencial.</p>
+                        </div>
+                    </button>
+
+                    <!-- Biblioteca -->
+                    <button onclick="changeView('biblioteca')" class="w-full glass p-6 rounded-3xl flex items-center gap-4 btn-hover card-shadow group border-slate-700 ripple touch-feedback mt-6">
+                        <div class="bg-slate-700/50 p-4 rounded-2xl group-hover:bg-slate-700 transition-colors">
+                            <span class="text-2xl">📚</span>
+                        </div>
+                        <div class="text-left">
+                            <h2 class="text-lg font-bold text-slate-300">BIBLIOTECA</h2>
+                            <p class="text-slate-400 text-sm">Explora todas las cartas</p>
+                        </div>
+                    </button>
+
+                </div>
+                `,
+
+            setup: () => `
+                <div class="space-y-6 animate-fade-in py-4">
+                    <div class="glass p-8 rounded-3xl card-shadow text-center">
+                        <div class="text-5xl mb-4">🃏</div>
+                        <h1 class="text-2xl font-black gradient-gold mb-2 uppercase">As Bajo La Manga</h1>
+                        <p class="text-slate-400 text-sm">Añade entre 2 y 20 jugadores para comenzar</p>
+                    </div>
+
+                    <div class="glass p-6 rounded-3xl">
+                        <div class="flex gap-2 mb-4">
+                            <input type="text" id="playerNameInput"
+                                   placeholder="Nombre del jugador"
+                                   class="flex-1 bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                   onkeypress="if(event.key==='Enter') addPlayer()" />
+                            <button onclick="addPlayer()" class="bg-gradient-to-r from-amber-500 to-orange-600 px-6 py-3 rounded-xl font-bold touch-feedback ripple">➕</button>
+                        </div>
+
+                        <div class="space-y-2 max-h-[300px] overflow-y-auto">
+                            ${(state.players || []).length === 0
+                                ? '<div class="text-center text-slate-500 py-8">Añade jugadores para comenzar</div>'
+                                : (state.players || []).map((p, i) => `
+                                <div class="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl">
+                                    <div class="flex items-center gap-3">
+                                        <span class="text-2xl">${['🔵','🟢','🟡','🔴','🟣','🟠'][i % 6]}</span>
+                                        <span class="font-bold">${p.name}</span>
+                                    </div>
+                                    <button onclick="removePlayer(${i})" class="text-red-500 hover:text-red-400 px-3 py-1 rounded-lg touch-feedback">✕</button>
+                                </div>
+                            `).join('')
+                            }
+                        </div>
+                    </div>
+
+                    <button onclick="iniciarJuego('menu')"
+                            class="w-full ${(state.players && state.players.length >= 2) ? 'bg-gradient-to-r from-green-500 to-emerald-600' : 'bg-slate-700 opacity-50 cursor-not-allowed'} p-4 rounded-2xl font-bold text-xl touch-feedback ripple"
+                            ${(state.players && state.players.length < 2) ? 'disabled' : ''}>
+                        ▶️ JUGAR (${(state.players || []).length} jugadores)
+                    </button>
+
+                    <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                        ← Volver al Menú
+                    </button>
+                </div>
+            `,
+
+            toxic: () => {
+                const CAT_META = {
+                    'TODAS':               { icon: '🔥', desc: 'Todo el mazo mezclado' },
+                    'VERDAD INCÓMODA':     { icon: '😳', desc: 'Confiesa lo que nunca dirías' },
+                    'RETO EXPRESS':        { icon: '⚡', desc: 'Retos rápidos y divertidos' },
+                    'REGLA DE ORO':        { icon: '👑', desc: 'Quien manda, manda' },
+                    'DUELO 1 VS 1':        { icon: '🥊', desc: 'Dos jugadores compiten' },
+                    'CASTIGO INSTANTÁNEO': { icon: '💀', desc: 'Bebe sin excusas' },
+                    'MISIÓN SECRETA':      { icon: '🕵️', desc: 'Solo tú sabes tu misión' },
+                    'COMODÍN':             { icon: '🃏', desc: 'Cartas sorpresa' },
+                    'TRIVIA RÁPIDA':       { icon: '🧠', desc: 'Demuestra que sabés' },
+                    'CADENA':              { icon: '🔗', desc: 'Todos participan en cadena' }};
+                const allCats = ['TODAS', ...new Set(TOXIC_CARDS.map(c => c.cat))];
+                const cardCount = state.toxicCategory.includes('TODAS')
+                    ? TOXIC_CARDS.filter(c => !state.trash.toxic.includes(String(c.id))).length
+                    : TOXIC_CARDS.filter(c => state.toxicCategory.includes(c.cat) && !state.trash.toxic.includes(String(c.id))).length;
+
+                if (state.toxicIndex === -1) {
+                    return `
+                        <div class="space-y-6 animate-fade-in pb-8 pt-4">
+                            <!-- Header -->
+                            <div class="text-center space-y-2">
+                                <div class="bg-amber-500/10 w-20 h-20 rounded-full flex items-center justify-center gold-border mx-auto">
+                                    <span class="text-4xl">🔥</span>
+                                </div>
+                                <h2 class="text-3xl font-extrabold gold-text">TOXIC CARDS</h2>
+                                <p class="text-slate-400 text-sm">Elegí las categorías que quieras jugar</p>
+                            </div>
+
+                            <!-- Contador dinámico -->
+                            <div class="glass rounded-2xl px-6 py-3 flex items-center justify-center gap-3 border border-amber-500/20">
+                                <span class="text-amber-400 text-2xl font-black">${cardCount}</span>
+                                <span class="text-slate-400 text-sm font-bold uppercase tracking-wider">cartas disponibles</span>
+                            </div>
+
+                            <!-- Chips de categoría -->
+                            <div class="space-y-3">
+                                <p class="text-xs gold-text font-bold uppercase tracking-widest text-center">Categorías</p>
+                                <div class="flex flex-col gap-3">
+                                    ${allCats.map(cat => {
+                                        const isActive = state.toxicCategory.includes(cat);
+                                        const meta = CAT_META[cat] || { icon: '🎴', desc: '' };
+                                        const count = cat === 'TODAS'
+                                            ? TOXIC_CARDS.filter(c => !state.trash.toxic.includes(String(c.id))).length
+                                            : TOXIC_CARDS.filter(c => c.cat === cat && !state.trash.toxic.includes(String(c.id))).length;
+                                        return `
+                                        <button onclick="toggleToxicCategory('${cat.replace(/'/g, "\\'")}')"
+                                                class="w-full flex items-center gap-4 p-4 rounded-2xl border transition-all touch-feedback ripple
+                                                       ${isActive
+                                                           ? 'bg-amber-500/20 border-amber-400/60 shadow-lg shadow-amber-500/10'
+                                                           : 'glass border-white/5 hover:border-amber-500/30'}">
+                                            <div class="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 text-2xl
+                                                        ${isActive ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400'}">
+                                                ${meta.icon}
+                                            </div>
+                                            <div class="flex-1 text-left">
+                                                <p class="font-black text-sm uppercase tracking-wide ${isActive ? 'gold-text' : 'text-slate-300'}">${cat}</p>
+                                                <p class="text-xs text-slate-500 mt-0.5">${meta.desc}</p>
+                                            </div>
+                                            <div class="flex-shrink-0 flex flex-col items-end gap-1">
+                                                <span class="text-xs font-bold ${isActive ? 'text-amber-400' : 'text-slate-600'}">${count} cartas</span>
+                                                <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0
+                                                            ${isActive ? 'border-amber-400 bg-amber-400' : 'border-slate-600 bg-transparent'}">
+                                                    ${isActive ? '<span class="text-slate-950 text-xs font-black">✓</span>' : ''}
+                                                </div>
+                                            </div>
+                                        </button>
+                                    `}).join('')}
+                                </div>
+                            </div>
+
+                            <!-- Botón empezar -->
+                            <button onclick="startToxicGame()"
+                                    class="w-full bg-gold text-slate-950 font-black py-5 rounded-2xl text-lg uppercase shadow-lg shadow-amber-500/20 ripple touch-feedback ${cardCount === 0 ? 'opacity-40 pointer-events-none' : ''}">
+                                🔥 EMPEZAR (${cardCount} cartas)
+                            </button>
+                            <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                                ← Volver al Menú
+                            </button>
+                        </div>
+                    `;
+                }
+
+                const card = state.toxicDeck[state.toxicIndex];
+                const currentPlayer = state.players[state.currentPlayerIndex];
+
+                return `
+                <div class="space-y-8 animate-fade-in flex flex-col items-center">
+                    <div class="w-full text-center space-y-1">
+                        <span class="text-xs gold-text font-bold uppercase tracking-[0.3em]">Turno de</span>
+                        <h2 class="text-2xl font-black text-white uppercase">${currentPlayer?.name || currentPlayer}</h2>
+                    </div>
+
+                    <div class="w-full glass rounded-[2.5rem] p-8 min-h-[400px] flex flex-col items-center justify-between card-shadow card-enter relative overflow-hidden border-amber-500/40">
+                        <div class="absolute -top-10 -right-10 text-[120px] opacity-5 pointer-events-none">🔥</div>
+                        
+                        <div class="bg-amber-500/10 text-amber-500 text-[10px] font-bold tracking-[0.2em] px-4 py-1.5 rounded-full border border-amber-500/20 uppercase mb-4">
+                            ${card.cat}
+                        </div>
+
+                        <div class="flex-grow flex flex-col items-center justify-center text-center space-y-6">
+                            <h3 class="text-2xl font-bold tracking-tight text-white">${card.title}</h3>
+                            <p class="text-slate-200 text-lg leading-relaxed">${card.text}</p>
+                        </div>
+
+                        <div class="w-full pt-8 flex flex-col items-center space-y-2">
+                            <div class="text-[10px] font-bold gold-text uppercase tracking-widest">Penitencia</div>
+                            <div class="flex items-center gap-2 bg-slate-950/50 px-6 py-2.5 rounded-2xl border border-amber-500/20">
+                                <span class="text-xl">🥃</span>
+                                <span class="font-bold text-xl text-white uppercase">${card.drink}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex w-full gap-4">
+                        <button onclick="resetToxicDeck(); vibrate(100); showToast('¡Mazo mezclado!');" class="flex-1 glass p-4 rounded-2xl btn-hover text-slate-400 font-bold uppercase tracking-wider text-xs ripple touch-feedback">Mezclar</button>
+                        <button onclick="drawToxicCard()" class="flex-[2] bg-gold text-slate-950 p-4 rounded-2xl font-black btn-hover text-lg uppercase tracking-tight ripple touch-feedback">Siguiente</button>
+                    </div>
+                </div>
+                `;
+            },
+
+            poker: () => {
+                if (state.pokerIndex === -1) {
+                    return `
+                <div class="flex flex-col items-center justify-center h-[60vh] space-y-8 animate-fade-in text-center">
+                    <div class="bg-red-500/10 w-32 h-32 rounded-full flex items-center justify-center border border-red-500/20">
+                        <span class="text-6xl animate-pulse">🃏</span>
+                    </div>
+                    <div>
+                        <h2 class="text-3xl font-extrabold mb-2 text-red-500 uppercase">POKER CALIENTE</h2>
+                        <p class="text-slate-400">Cartas, azar y penitencias</p>
+                    </div>
+                    <button onclick="drawPokerCard()" class="w-full bg-red-600 hover:bg-red-500 text-white font-black py-4 rounded-2xl card-shadow btn-hover text-lg uppercase">
+                        REPARTIR
+                    </button>
+                    <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                        ← Volver al Menú
+                    </button>
+                </div>
+                `;
+                }
+
+                const card = state.pokerDeck[state.pokerIndex];
+                const isRed = ['♥️', '♦️'].includes(card.suit);
+                const currentPlayer = state.players[state.currentPlayerIndex];
+
+                return `
+                <div class="space-y-8 animate-fade-in flex flex-col items-center">
+                    <div class="w-full text-center space-y-1">
+                        <span class="text-xs text-red-400 font-bold uppercase tracking-[0.3em]">Turno de</span>
+                        <h2 class="text-2xl font-black text-white uppercase">${currentPlayer?.name || currentPlayer}</h2>
+                    </div>
+
+                    <div class="w-full glass rounded-[2.5rem] p-8 min-h-[400px] flex flex-col items-center justify-between card-shadow card-enter relative overflow-hidden border-red-500/30">
+                        <!-- Card Identity -->
+                        <div class="absolute top-8 left-8 text-4xl font-black ${isRed ? 'text-red-500' : 'text-slate-300'} flex flex-col items-center">
+                            <span>${card.rank}</span>
+                            <span class="text-3xl opacity-50">${card.suit}</span>
+                        </div>
+                        <div class="absolute bottom-8 right-8 text-4xl font-black ${isRed ? 'text-red-500' : 'text-slate-300'} flex flex-col items-center rotate-180">
+                            <span>${card.rank}</span>
+                            <span class="text-3xl opacity-50">${card.suit}</span>
+                        </div>
+
+                        <div class="flex-grow flex flex-col items-center justify-center text-center space-y-6 px-4">
+                            <h3 class="text-2xl font-bold tracking-tight text-white">${card.title}</h3>
+                            <p class="text-slate-200 text-lg leading-relaxed">${card.text}</p>
+                        </div>
+
+                        <div class="w-full pt-8 flex flex-col items-center space-y-2">
+                            <div class="text-[10px] font-bold text-red-400 uppercase tracking-widest">Penitencia</div>
+                            <div class="text-2xl font-black text-white">${card.drink}</div>
+                        </div>
+                    </div>
+
+                    <div class="flex w-full gap-4">
+                        <button onclick="resetPokerDeck(); vibrate(100); showToast('¡Baraja mezclada!');" class="flex-1 glass p-4 rounded-2xl btn-hover text-slate-400 font-bold uppercase tracking-wider text-xs ripple touch-feedback">Mezclar</button>
+                        <button onclick="drawPokerCard()" class="flex-[2] bg-red-600 text-white p-4 rounded-2xl font-black btn-hover text-lg uppercase tracking-tight shadow-lg shadow-red-500/20 ripple touch-feedback">Siguiente</button>
+                    </div>
+                </div>
+                `;
+            },
+
+
+            sinexcusas: () => {
+                const CAT_COLORS = {
+                    'TODAS': '#22d3ee',
+                    'bala_perdida': '#f43f5e',
+                    'juego': '#a855f7',
+                    'bendicion': '#22c55e',
+                    'mision_oculta': '#f59e0b',
+                    'la_ley': '#3b82f6',
+                    'desafio': '#f97316',
+                    'maldicion': '#ef4444',
+                    'corona': '#eab308'
+                };
+                const CAT_LABELS = {
+                    'TODAS': 'TODAS',
+                    'bala_perdida': '🎯 BALA PERDIDA',
+                    'juego': '🎮 JUEGO',
+                    'bendicion': '✨ BENDICIÓN',
+                    'mision_oculta': '🕵️ MISIÓN OCULTA',
+                    'la_ley': '⚖️ LA LEY',
+                    'desafio': '🔥 DESAFÍO',
+                    'maldicion': '💀 MALDICIÓN',
+                    'corona': '👑 LA CORONA'
+                };
+                const allCats = ['TODAS', ...new Set(SIN_EXCUSAS_CARDS.map(c => c.cat))];
+                const sinCat = state.sinexcusas.category || ['TODAS'];
+                const cardCount = sinCat.includes('TODAS')
+                    ? SIN_EXCUSAS_CARDS.filter(c => !state.trash.sinexcusas.includes(String(c.id))).length
+                    : SIN_EXCUSAS_CARDS.filter(c => sinCat.includes(c.cat) && !state.trash.sinexcusas.includes(String(c.id))).length;
+
+                if (state.sinexcusas.index === -1 || state.sinexcusas.index === undefined) {
+                    return `
+                        <div class="space-y-6 animate-fade-in pb-8 pt-4">
+                            <div class="text-center space-y-2">
+                                <div class="bg-cyan-500/10 w-20 h-20 rounded-full flex items-center justify-center border border-cyan-500/30 mx-auto">
+                                    <span class="text-4xl">🍻</span>
+                                </div>
+                                <h2 class="text-3xl font-extrabold text-cyan-400">SIN EXCUSAS</h2>
+                                <p class="text-slate-400 text-sm">Elegí las categorías que quieras jugar</p>
+                            </div>
+
+                            <div class="glass rounded-2xl px-6 py-3 flex items-center justify-center gap-3 border border-cyan-500/20">
+                                <span class="text-cyan-400 text-2xl font-black">${cardCount}</span>
+                                <span class="text-slate-400 text-sm font-bold uppercase tracking-wider">cartas disponibles</span>
+                            </div>
+
+                            <div class="flex flex-col gap-3">
+                                ${allCats.map(cat => {
+                                    const isActive = sinCat.includes(cat);
+                                    const color = CAT_COLORS[cat] || '#22d3ee';
+                                    const label = CAT_LABELS[cat] || cat;
+                                    const count = cat === 'TODAS'
+                                        ? SIN_EXCUSAS_CARDS.filter(c => !state.trash.sinexcusas.includes(String(c.id))).length
+                                        : SIN_EXCUSAS_CARDS.filter(c => c.cat === cat && !state.trash.sinexcusas.includes(String(c.id))).length;
+                                    return `
+                                    <button onclick="toggleSinExcusasCategory('${cat}')"
+                                            class="w-full flex items-center gap-4 p-4 rounded-2xl border transition-all touch-feedback ripple
+                                                   ${isActive ? 'border-opacity-60' : 'glass border-white/5'}"
+                                            style="${isActive ? `background:${color}22; border-color:${color}88;` : ''}">
+                                        <div class="flex-1 text-left">
+                                            <p class="font-black text-sm uppercase tracking-wide" style="color:${isActive ? color : '#94a3b8'}">${label}</p>
+                                            <p class="text-xs text-slate-500 mt-0.5">${count} cartas</p>
+                                        </div>
+                                        <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0"
+                                             style="border-color:${isActive ? color : '#475569'}; background:${isActive ? color : 'transparent'}">
+                                            ${isActive ? '<span class="text-slate-950 text-xs font-black">✓</span>' : ''}
+                                        </div>
+                                    </button>
+                                `}).join('')}
+                            </div>
+
+                            <button onclick="startSinExcusas()"
+                                    class="w-full bg-cyan-600 text-white font-black py-5 rounded-2xl text-lg uppercase shadow-lg shadow-cyan-500/20 ripple touch-feedback ${cardCount === 0 ? 'opacity-40 pointer-events-none' : ''}">
+                                🍻 EMPEZAR (${cardCount} cartas)
+                            </button>
+                            <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                                ← Volver al Menú
+                            </button>
+                        </div>
+                    `;
+                }
+
+                const card = state.sinexcusas.deck[state.sinexcusas.index];
+                if (!card) { state.sinexcusas.index = -1; saveState(); render(); return ''; }
+                const currentPlayer = state.players[state.currentPlayerIndex];
+                const cardColor = CAT_COLORS[card.cat] || '#22d3ee';
+
+                return `
+                <div class="space-y-6 animate-fade-in flex flex-col items-center">
+                    <div class="w-full text-center space-y-1">
+                        <span class="text-xs font-bold uppercase tracking-[0.3em]" style="color:${cardColor}">Turno de</span>
+                        <h2 class="text-2xl font-black text-white uppercase">${currentPlayer?.name || currentPlayer}</h2>
+                    </div>
+
+                    <div class="w-full rounded-[2.5rem] p-8 min-h-[380px] flex flex-col items-center justify-center card-shadow ${state.sinexcusas.animationClass || ''}"
+                         style="background: linear-gradient(135deg, ${cardColor}18 0%, #0f172a 70%); border: 2px solid ${cardColor}55;">
+                        <div class="text-[10px] font-black tracking-[0.3em] px-5 py-2 rounded-full uppercase mb-6 border"
+                             style="color:${cardColor}; border-color:${cardColor}44; background:${cardColor}18;">
+                            ${CAT_LABELS[card.cat] || card.cat}
+                        </div>
+                        <div class="flex-grow flex items-center justify-center text-center w-full px-2 mb-6">
+                            <p class="text-white text-xl font-bold leading-relaxed">${card.body || card.text || ''}</p>
+                        </div>
+                        ${card.drink ? `
+                        <div class="w-full flex flex-col items-center space-y-1">
+                            <div class="text-[10px] font-bold uppercase tracking-widest" style="color:${cardColor}">Penitencia</div>
+                            <div class="flex items-center gap-2 bg-slate-950/50 px-6 py-2.5 rounded-2xl border" style="border-color:${cardColor}33">
+                                <span class="text-xl">🥃</span>
+                                <span class="font-bold text-lg text-white uppercase">${card.drink}</span>
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+
+                    <div class="flex w-full gap-4">
+                        <button onclick="resetSinExcusasDeck(); vibrate(100); showToast('¡Mazo mezclado!');" class="flex-1 glass p-4 rounded-2xl btn-hover text-slate-400 font-bold uppercase tracking-wider text-xs ripple touch-feedback">Mezclar</button>
+                        <button onclick="drawSinExcusasCard()" class="flex-[2] text-white p-4 rounded-2xl font-black btn-hover text-lg uppercase tracking-tight shadow-lg ripple touch-feedback" style="background:${cardColor}; box-shadow: 0 10px 30px ${cardColor}44;">Siguiente</button>
+                    </div>
+                </div>
+                `;
+            },
+
+            sabio: () => {
+                if (!state.sabio.current) {
+                    return `
+                <div class="flex flex-col items-center justify-center h-[60vh] space-y-8 animate-fade-in text-center">
+                    <div class="bg-blue-500/10 w-32 h-32 rounded-full flex items-center justify-center border border-blue-500/30">
+                        <span class="text-6xl animate-bounce">🧙‍♂️</span>
+                    </div>
+                    <div>
+                        <h2 class="text-3xl font-extrabold mb-2 text-blue-400 uppercase">EL SABIO</h2>
+                        <p class="text-slate-400">Adivina bajo su sabiduría</p>
+                    </div>
+                    <button onclick="initSabio()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-2xl card-shadow btn-hover text-lg uppercase tracking-widest">
+                        JUGAR
+                    </button>
+                    <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                        ← Volver al Menú
+                    </button>
+                </div>
+                `;
+                }
+
+                const card = state.sabio.current;
+                const isRed = ['♥️', '♦️'].includes(card.suit);
+                const isJefe = state.sabio.mode === 'jefe';
+
+                return `
+                <div class="space-y-6 animate-fade-in flex flex-col items-center pt-4">
+                    <!-- Mode & Drink Counter -->
+                    <div class="w-full flex items-center justify-between glass p-4 rounded-2xl border-blue-500/20">
+                        <div class="flex flex-col">
+                            <span class="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Modo</span>
+                            <button onclick="toggleSabioMode()" class="text-white font-black uppercase text-xs hover:text-blue-400 transition-colors">
+                                ${state.sabio.mode === 'jefe' ? '👨‍💻 JEFE' : '👤 PARTICIPANTE'}
+                            </button>
+                        </div>
+                        <div class="flex items-center gap-4 bg-slate-950/50 px-4 py-2 rounded-xl border border-white/5">
+                            <button onclick="updateSabioDrinks(-1)" class="text-red-500 font-black text-xl hover:scale-125 transition-transform">−</button>
+                            <div class="flex flex-col items-center">
+                                <span class="text-[8px] font-bold text-slate-500 uppercase">Tragos</span>
+                                <span class="text-xl font-black ${state.sabio.drinks >= 0 ? 'text-white' : 'text-emerald-400'}">${state.sabio.drinks}</span>
+                            </div>
+                            <button onclick="updateSabioDrinks(1)" class="text-emerald-500 font-black text-xl hover:scale-125 transition-transform">+</button>
+                        </div>
+                    </div>
+
+                    <div class="w-full relative flex justify-center py-4">
+                        <p class="absolute -top-4 text-center text-[10px] text-blue-400/50 font-bold uppercase tracking-[0.4em]">CARTA ACTUAL</p>
+                        <div class="w-48 h-72 glass rounded-[2rem] flex flex-col items-center justify-center card-shadow relative overflow-hidden border-blue-500/40">
+                             <div class="absolute -top-10 -left-10 text-8xl opacity-10 pointer-events-none text-blue-400">🧙‍♂️</div>
+                             <div class="text-6xl font-black ${isRed ? 'text-red-500' : 'text-slate-200'} flex flex-col items-center">
+                                <span>${card.rank}</span>
+                                <span class="text-4xl opacity-50">${card.suit}</span>
+                            </div>
+                        </div>
+                        
+                        ${isJefe ? `
+                            <div class="absolute -right-2 top-1/2 -translate-y-1/2 flex flex-col items-center scale-75 opacity-80">
+                                <span class="text-[8px] font-bold text-blue-400 uppercase tracking-widest mb-1">PROXIMA</span>
+                                <div class="w-20 h-32 glass rounded-xl border-dashed border-blue-500/50 flex flex-col items-center justify-center">
+                                    <span class="text-lg font-black ${['♥️', '♦️'].includes(state.sabio.next.suit) ? 'text-red-500' : 'text-white'}">${state.sabio.next.rank}</span>
+                                    <span class="text-md opacity-50">${state.sabio.next.suit}</span>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <div class="w-full space-y-4">
+                        <div class="text-center">
+                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-[0.3em]">Sabio pregunta:</span>
+                            <h3 class="text-2xl font-black text-white uppercase">${state.sabio.questionType === 'color' ? '🎨 COLOR?' : state.sabio.questionType === 'suit' ? '🃏 PALO?' : '↔️ MAYOR O MENOR?'}</h3>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            ${state.sabio.questionType === 'color' ? `
+                                <button onclick="checkSabio('color', 'red')" class="bg-red-600/20 border border-red-500/30 p-5 rounded-2xl font-black btn-hover text-red-400 uppercase tracking-tighter shadow-lg shadow-red-500/10">❤️ ROJA</button>
+                                <button onclick="checkSabio('color', 'black')" class="bg-slate-900 border border-white/10 p-5 rounded-2xl font-black btn-hover text-white uppercase tracking-tighter shadow-lg">🖤 NEGRA</button>
+                            ` : state.sabio.questionType === 'suit' ? `
+                                <button onclick="checkSabio('suit', '♥️')" class="glass p-4 rounded-2xl text-3xl btn-hover border-red-500/20 text-red-500">♥️</button>
+                                <button onclick="checkSabio('suit', '♦️')" class="glass p-4 rounded-2xl text-3xl btn-hover border-red-500/20 text-red-500">♦️</button>
+                                <button onclick="checkSabio('suit', '♣️')" class="glass p-4 rounded-2xl text-3xl btn-hover border-slate-700 text-white">♣️</button>
+                                <button onclick="checkSabio('suit', '♠️')" class="glass p-4 rounded-2xl text-3xl btn-hover border-slate-700 text-white">♠️</button>
+                            ` : `
+                                <button onclick="checkSabio('compare', 'higher')" class="bg-blue-600/20 border border-blue-500/30 p-5 rounded-2xl font-black btn-hover text-blue-400 uppercase tracking-tighter shadow-lg shadow-blue-500/10">🔼 MAYOR</button>
+                                <button onclick="checkSabio('compare', 'lower')" class="bg-slate-900 border border-white/10 p-5 rounded-2xl font-black btn-hover text-white uppercase tracking-tighter shadow-lg">🔽 MENOR</button>
+                            `}
+                        </div>
+                    </div>
+                </div>
+
+                ${state.sabio.feedback ? `
+                        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-md animate-fade-in px-6">
+                            <div class="glass w-full max-w-xs p-10 rounded-[3.5rem] text-center space-y-8 card-shadow border-blue-500/20 relative overflow-hidden">
+                                <div class="absolute inset-0 bg-blue-500/5 pointer-events-none"></div>
+                                <div class="text-6xl">${state.sabio.feedback === 'CORRECTO' ? '✨' : '💥'}</div>
+                                <div class="space-y-1">
+                                    <h3 class="text-4xl font-black ${state.sabio.feedback === 'CORRECTO' ? 'text-emerald-400' : 'text-red-500'} italic uppercase tracking-tighter">${state.sabio.feedback}</h3>
+                                    <p class="text-slate-400 text-xs font-bold uppercase tracking-widest">${state.sabio.feedback === 'CORRECTO' ? 'Restas un trago' : 'Sumas un trago'}</p>
+                                </div>
+                                
+                                <div class="flex flex-col items-center gap-3 bg-slate-950/50 py-6 rounded-3xl border border-white/5">
+                                    <p class="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Era la carta</p>
+                                    <div class="text-5xl font-black flex items-center gap-2">
+                                        <span class="text-white">${state.sabio.next.rank}</span>
+                                        <span class="${['♥️', '♦️'].includes(state.sabio.next.suit) ? 'text-red-500' : 'text-slate-300'}">${state.sabio.next.suit}</span>
+                                    </div>
+                                </div>
+
+                                <button onclick="nextRoundSabio()" class="w-full bg-white text-slate-950 py-5 rounded-2xl font-black btn-hover uppercase tracking-widest text-lg shadow-xl">CONTINUAR</button>
+                            </div>
+                        </div>
+                    ` : ''}
+                `;
+            },
+
+            biblioteca: () => {
+                const tabs = [
+                    { id: 'toxic', label: '🔥 TOXIC' },
+                    { id: 'poker', label: '🃏 POKER' },
+                    
+                    { id: 'quienEsMas', label: '🏆 QUIÉN' },
+                    { id: 'bomba', label: '💣 BOMBA' },
+                    { id: 'cadena', label: '⛓️ CADENA' },
+                    { id: 'dilema', label: '👑 DILEMA' },
+                    { id: 'mimica', label: '🎭 MÍMICA' },
+                    { id: 'papelera', label: '🗑️ PAPELERA' }
+                ];
+                
+                setTimeout(filterLib, 50); // Llenar lista dinámicamente preservando foco HTML
+
+                const currentTab = tabs.find(t => t.id === state.libTab) || tabs[0];
+                return `
+                <div class="space-y-6 animate-fade-in flex flex-col h-full">
+                    <!-- Tab Bar Horizontal -->
+                    <div class="sticky top-[80px] z-40 bg-[#020617] pt-2 pb-4 -mx-4 px-4 mask-edges">
+                        <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide" style="-ms-overflow-style: none; scrollbar-width: none;">
+                            ${tabs.map(t => `
+                                <button onclick="state.libTab = '${t.id}'; render();" class="flex-shrink-0 px-4 py-3 rounded-xl font-bold text-sm transition-all border ${state.libTab === t.id ? (t.id === 'papelera' ? 'bg-red-900 border-red-500/50 text-white shadow-lg' : 'bg-slate-800 border-white/20 text-white shadow-lg') : 'bg-transparent border-transparent text-slate-500 hover:text-slate-400'}">
+                                    ${t.label}
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    ${state.libTab !== 'papelera' ? `
+                    <div class="relative">
+                        <input type="text" id="lib-search" oninput="filterLib()" placeholder="Buscar en ${currentTab.label}..." class="w-full glass p-4 rounded-2xl border-white/10 focus:outline-none focus:border-gold/50 transition-colors pl-12 italic text-sm">
+                        <span class="absolute left-4 top-1/2 -translate-y-1/2 opacity-30">🔍</span>
+                    </div>
+                    ` : `
+                    <div class="glass p-4 rounded-2xl text-center border-red-500/20 bg-red-500/5">
+                        <p class="text-red-400 font-bold text-sm uppercase tracking-widest mb-1">🗑️ Elementos Ocultos</p>
+                        <p class="text-slate-400 text-xs">Lo que envíes aquí no aparecerá en ninguna de tus partidas futuras.</p>
+                    </div>
+                    `}
+
+                    <div id="lib-results" class="flex flex-col gap-3">
+                        <div class="text-center text-slate-500 py-12 animate-pulse">Cargando...</div>
+                    </div>
+                    
+                    <div id="lib-count" class="text-center py-4 pb-8 text-slate-600 text-xs font-bold uppercase tracking-widest opacity-30">
+                        Total: 0
+                    </div>
+                </div>
+                `;
+            },
+
+            // ========================================
+            // JUEGOS NUEVOS - VISTAS
+            // ========================================
+
+            quienEsMas: () => {
+                const question = state.quienEsMas?.currentQuestion || "Presiona NUEVA PREGUNTA para empezar";
+
+                return `
+                    <div class="space-y-6 animate-fade-in">
+                        <div class="glass p-8 rounded-3xl card-shadow text-center">
+                            <div class="text-4xl mb-4">🏆</div>
+                            <h2 class="text-2xl font-bold gradient-gold mb-2">¿QUIÉN ES MÁS...?</h2>
+                            <p class="text-slate-400 text-sm">A la cuenta de 3, señalen al más probable</p>
+                        </div>
+                        
+                        <div class="glass p-8 rounded-3xl card-shadow min-h-[200px] flex items-center justify-center">
+                            <p class="text-xl font-bold text-center text-white leading-relaxed px-4">
+                                ${question}
+                            </p>
+                        </div>
+                        
+                        <button onclick="nuevaPreguntaQuienEsMas()" class="w-full bg-gradient-to-r from-amber-500 to-orange-600 p-4 rounded-2xl font-bold text-lg touch-feedback ripple">
+                            🎲 NUEVA PREGUNTA
+                        </button>
+                        
+                        <div class="glass p-4 rounded-2xl text-center">
+                            <p class="text-slate-400 text-sm mb-2">Instrucciones:</p>
+                            <p class="text-white font-bold">El que reciba más votos BEBE 🍺</p>
+                        </div>
+                        
+                        <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                            ← Volver al Menú
+                        </button>
+                    </div>
+                `;
+            },
+
+            bomba: () => {
+                const categoria = state.bomba?.currentCategory || "Presiona INICIAR BOMBA";
+                const isActive = state.bomba?.isActive || false;
+
+                return `
+                    <div class="space-y-6 animate-fade-in">
+                        <div class="glass p-8 rounded-3xl card-shadow text-center">
+                            <div class="text-4xl mb-4">💣</div>
+                            <h2 class="text-2xl font-bold text-red-500 mb-2">BOMBA DE PALABRAS</h2>
+                            <p class="text-slate-400 text-sm">Di palabras de la categoría antes que explote</p>
+                        </div>
+                        
+                        <div class="glass p-8 rounded-3xl card-shadow min-h-[200px] flex flex-col items-center justify-center">
+                            <p class="text-sm text-slate-400 mb-2 uppercase tracking-wider">Categoría:</p>
+                            <p class="text-2xl font-bold text-center text-white mb-4 px-4">
+                                ${categoria}
+                            </p>
+                            ${isActive ? '<div class="text-red-500 animate-pulse text-lg font-bold">⏱️ ¡ESTÁ CORRIENDO!</div>' : ''}
+                        </div>
+                        
+                        <button onclick="${isActive ? 'detonarBomba()' : 'iniciarBomba()'}" 
+                                class="w-full ${isActive ? 'bg-red-600 animate-pulse' : 'bg-gradient-to-r from-orange-500 to-red-600'} p-4 rounded-2xl font-bold text-lg touch-feedback ripple">
+                            ${isActive ? '💥 ¡EXPLOTÓ!' : '🎮 INICIAR BOMBA'}
+                        </button>
+                        
+                        <div class="glass p-4 rounded-2xl text-center">
+                            <div class="text-sm text-slate-400 mb-2">Instrucciones:</div>
+                            <p class="text-white font-bold">Pásense el celular o turno rápido. El que tenga el turno cuando explote BEBE.</p>
+                        </div>
+                        
+                        <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                            ← Volver al Menú
+                        </button>
+                    </div>
+                `;
+            },
+
+            retoCadena: () => {
+                const chain = state.retoCadena?.currentChain || [];
+
+                return `
+                    <div class="space-y-6 animate-fade-in">
+                        <div class="glass p-8 rounded-3xl card-shadow text-center">
+                            <div class="text-4xl mb-4">⛓️</div>
+                            <h2 class="text-2xl font-bold text-blue-400 mb-2">RETO EN CADENA</h2>
+                            <p class="text-slate-400 text-sm">Repite todos los retos y añade uno nuevo</p>
+                        </div>
+                        
+                        <div class="glass p-6 rounded-3xl">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="font-bold text-slate-400 text-sm uppercase">Cadena Actual</h3>
+                                <span class="bg-blue-500/20 px-3 py-1 rounded-full text-sm font-bold text-blue-400">
+                                    ${chain.length} retos
+                                </span>
+                            </div>
+                            <div class="space-y-2 max-h-[300px] overflow-y-auto">
+                                ${chain.length > 0 ? chain.map((reto, i) => `
+                                    <div class="flex items-start gap-3 p-3 bg-slate-800/50 rounded-xl">
+                                        <span class="font-bold text-blue-400 text-sm">${i + 1}.</span>
+                                        <span class="text-sm">${reto}</span>
+                                    </div>
+                                `).join('') : `
+                                    <div class="text-center text-slate-500 py-8 text-sm">
+                                        Presiona "AÑADIR RETO" para empezar
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-3">
+                            <button onclick="anadirReto()" class="bg-gradient-to-r from-blue-500 to-purple-600 p-4 rounded-2xl font-bold touch-feedback ripple">
+                                ➕ AÑADIR RETO
+                            </button>
+                            <button onclick="falloReto()" class="bg-red-600 p-4 rounded-2xl font-bold touch-feedback ripple">
+                                ❌ FALLÓ
+                            </button>
+                        </div>
+                        
+                        <button onclick="reiniciarRetoCadena()" class="w-full glass p-3 rounded-2xl font-bold text-slate-400 text-sm touch-feedback">
+                            🔄 Reiniciar Cadena
+                        </button>
+                        
+                        <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                            ← Volver al Menú
+                        </button>
+                    </div>
+                `;
+            },
+
+            dilemaRey: () => {
+                const dilema = state.dilemaRey?.currentDilema || { a: "Presiona", b: "NUEVO DILEMA" };
+                const votesA = state.dilemaRey?.votesA || 0;
+                const votesB = state.dilemaRey?.votesB || 0;
+                const total = votesA + votesB;
+
+                return `
+                    <div class="space-y-6 animate-fade-in">
+                        <div class="glass p-8 rounded-3xl card-shadow text-center">
+                            <div class="text-4xl mb-4">👑</div>
+                            <h2 class="text-2xl font-bold gradient-gold mb-2">DILEMA DEL REY</h2>
+                            <p class="text-slate-400 text-sm">La minoría bebe</p>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <button onclick="votarDilema('a')" class="glass p-6 rounded-3xl btn-hover touch-feedback min-h-[150px] flex flex-col justify-between">
+                                <div>
+                                    <div class="text-3xl mb-2 font-bold text-amber-400">A</div>
+                                    <p class="text-sm leading-relaxed">${dilema.a}</p>
+                                </div>
+                                ${total > 0 ? `<div class="text-xl font-bold text-amber-500 mt-4">${votesA} votos</div>` : ''}
+                            </button>
+                            <button onclick="votarDilema('b')" class="glass p-6 rounded-3xl btn-hover touch-feedback min-h-[150px] flex flex-col justify-between">
+                                <div>
+                                    <div class="text-3xl mb-2 font-bold text-blue-400">B</div>
+                                    <p class="text-sm leading-relaxed">${dilema.b}</p>
+                                </div>
+                                ${total > 0 ? `<div class="text-xl font-bold text-blue-500 mt-4">${votesB} votos</div>` : ''}
+                            </button>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-3">
+                            <button onclick="nuevoDilema()" class="bg-gradient-to-r from-amber-500 to-orange-600 p-4 rounded-2xl font-bold touch-feedback ripple">
+                                🎲 NUEVO DILEMA
+                            </button>
+                            <button onclick="aplicarDilema()" class="bg-green-600 p-4 rounded-2xl font-bold touch-feedback ripple">
+                                ✅ APLICAR
+                            </button>
+                        </div>
+                        
+                        <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                            ← Volver al Menú
+                        </button>
+                    </div>
+                `;
+            },
+
+            mimicaExpress: () => {
+                const word = state.mimicaExpress?.currentWord || "Presiona INICIAR para empezar";
+                const timeLeft = state.mimicaExpress?.timeLeft || 20;
+                const isActive = !!(state.mimicaExpress?.timerInterval);
+
+                return `
+                    <div class="space-y-6 animate-fade-in">
+                        <div class="glass p-8 rounded-3xl card-shadow text-center">
+                            <div class="text-4xl mb-4">🎭</div>
+                            <h2 class="text-2xl font-bold text-purple-400 mb-2">MÍMICA EXPRESS</h2>
+                            <p class="text-slate-400 text-sm">20 segundos para actuar</p>
+                        </div>
+                        
+                        <div class="glass p-8 rounded-3xl card-shadow min-h-[180px] flex flex-col items-center justify-center">
+                            <p class="text-2xl font-bold text-center mb-4 px-4">${word}</p>
+                            ${isActive ? `
+                                <div class="text-5xl font-black text-amber-500">${timeLeft}</div>
+                                <div class="w-full h-2 bg-slate-700 rounded-full mt-4 overflow-hidden">
+                                    <div class="h-full bg-amber-500 transition-all duration-1000" style="width: ${(timeLeft / 20) * 100}%"></div>
+                                </div>
+                            ` : ''}
+                        </div>
+                        
+                        <button onclick="${isActive ? 'detenerMimica()' : 'iniciarMimica()'}" 
+                                class="w-full bg-gradient-to-r from-purple-500 to-pink-600 p-4 rounded-2xl font-bold text-lg touch-feedback ripple">
+                            ${isActive ? '⏹️ DETENER' : '▶️ INICIAR MÍMICA'}
+                        </button>
+                        
+                        <div class="grid grid-cols-2 gap-3">
+                            <button onclick="resultadoMimica(true)" class="bg-green-600 p-3 rounded-xl font-bold text-sm touch-feedback">
+                                ✅ Adivinaron
+                            </button>
+                            <button onclick="resultadoMimica(false)" class="bg-red-600 p-3 rounded-xl font-bold text-sm touch-feedback">
+                                ❌ Fallaron
+                            </button>
+                        </div>
+                        
+                        <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                            ← Volver al Menú
+                        </button>
+                    </div>
+                `;
+            },
+
+
+            auth: () => `
+                <div class="space-y-6 animate-fade-in py-4">
+                    <div class="text-center space-y-2">
+                        <div style="font-size:3rem;">🔐</div>
+                        <h2 class="text-3xl font-black gradient-gold uppercase">Acceso VIP</h2>
+                        <p class="text-slate-400 text-sm">Iniciá sesión para desbloquear modos exclusivos</p>
+                    </div>
+
+                    ${state.user ? `
+                    <div class="glass p-6 rounded-3xl border border-amber-500/20 text-center space-y-4">
+                        <p class="text-emerald-400 font-bold">✅ Sesión Iniciada</p>
+                        <p class="text-slate-300 text-sm font-bold text-amber-400">@${state.user.email.split("@")[0]}</p>
+                        <button onclick="signOutSupabase()" class="w-full bg-red-500/20 text-red-400 border border-red-500/30 p-4 rounded-2xl font-black touch-feedback ripple">
+                            Cerrar Sesión
+                        </button>
+                    </div>
+                    ` : `
+                    <div class="glass p-6 rounded-3xl border border-amber-500/20 space-y-4">
+                        <input id="auth-username" type="text" placeholder="Nombre de usuario" autocomplete="off" 
+                               class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500">
+                        <input id="auth-password" type="password" placeholder="Contraseña" 
+                               class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500">
+                        
+                        <div class="grid grid-cols-2 gap-3 mt-4">
+                            <button onclick="signInWithSupabase()" class="p-4 rounded-2xl font-black text-slate-950 touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                                Iniciar Sesión
+                            </button>
+                            <button onclick="signUpWithSupabase()" class="glass p-4 rounded-2xl font-bold text-amber-400 border border-amber-500/20 touch-feedback ripple">
+                                Registrarse
+                            </button>
+                        </div>
+                    </div>
+                    `}
+                    <button onclick="changeView('welcome')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">← Volver</button>
+                </div>
+            `,
+            ultimaCarta: () => {
+                // Lobby de configuración inicial
+                if (!state.ultimaCarta || !state.ultimaCarta.active) {
+                    const players = state.players || [];
+                    return `
+                    <div class="space-y-6 animate-fade-in py-4">
+                        <div class="text-center space-y-2">
+                            <div style="font-size:4rem;" class="filter drop-shadow-[0_0_15px_rgba(245,158,11,0.5)]">🃏</div>
+                            <h2 class="text-3xl font-black gradient-gold uppercase">La Última Carta</h2>
+                            <p class="text-slate-400 text-sm">Torneo de apuestas y riesgo</p>
+                        </div>
+
+                        ${players.length < 2 ? `
+                        <div class="glass p-4 rounded-2xl border border-red-500/20 text-center">
+                            <p class="text-red-400 text-sm">⚠️ Necesitás al menos 2 jugadores</p>
+                            <button onclick="changeView('setup')" class="mt-3 bg-red-500/20 text-red-300 px-4 py-2 rounded-xl text-sm font-bold border border-red-500/30 touch-feedback">➕ Agregar jugadores</button>
+                        </div>
+                        ` : ''}
+
+                        <!-- Modos de juego -->
+                        ${players.length >= 2 ? `
+                        <div class="space-y-3">
+                            <button onclick="initUltimaCartaLocal()" class="w-full p-5 rounded-3xl font-black text-slate-950 text-lg uppercase card-shadow touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                                🎮 Jugar en Este Dispositivo
+                            </button>
+                            <button onclick="changeView('roomLobby')" class="w-full glass p-4 rounded-2xl font-bold text-amber-400 border border-amber-500/20 touch-feedback ripple flex items-center justify-center gap-2">
+                                📡 Crear / Unirse a Sala Online
+                            </button>
+                        </div>
+                        ` : ''}
+
+                        <button onclick="changeView('welcome')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">← Volver</button>
+                    </div>`;
+                }
+
+                // Juego activo
+                const uc = state.ultimaCarta;
+                const phase = uc.phase;
+                const player = uc.players[uc.currentPlayerIndex];
+                const stepNames = ['¿Par o Impar?','¿Mayor o Menor?','¿Rojo o Negro?','¿Palo?'];
+                const stepPoints = [1, 2, 3, 4];
+
+                // Marcador compacto
+                const scoreBoard = `
+                    <div class="glass p-3 rounded-2xl border border-white/5 mb-4">
+                        <div class="flex gap-2 overflow-x-auto pb-1">
+                            ${uc.players.map((pl,i) => `
+                                <div class="flex-shrink-0 text-center px-3 py-2 rounded-xl ${i === uc.currentPlayerIndex ? 'bg-amber-500/20 border border-amber-500/40' : 'bg-slate-800/50'}">
+                                    <p class="text-[10px] text-slate-400">${pl.name.substring(0,8)}</p>
+                                    <p class="font-black text-lg ${pl.score >= 0 ? 'text-emerald-400' : 'text-red-400'}">${pl.score >= 0 ? '+' : ''}${pl.score}</p>
+                                    <p class="text-[9px] text-slate-500">R${Math.min(pl.turnsPlayed + 1, 3)}/3</p>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>`;
+
+                if (phase === 'cobarde') {
+                    return `
+                    <div class="space-y-5 animate-fade-in py-4">
+                        ${scoreBoard}
+                        <div class="text-center space-y-1">
+                            <p class="text-xs text-amber-400 font-bold uppercase tracking-widest">Turno ${uc.currentRound}/${uc.totalRounds}</p>
+                            <h2 class="text-2xl font-black uppercase">${player.name}</h2>
+                        </div>
+                        <div class="glass p-8 rounded-3xl text-center space-y-6 border border-amber-500/20">
+                            <div style="font-size:3.5rem;">⚠️</div>
+                            <div>
+                                <h3 class="text-xl font-black text-amber-400 uppercase">Regla del Cobarde</h3>
+                                <p class="text-slate-400 mt-2 text-sm">Podés declarar "No juego" antes de que el Dealer tire la primera carta.</p>
+                                <p class="text-slate-300 mt-1 text-sm">Si no jugás: <span class="text-red-400 font-bold">1 trago</span> pero mantenés tu puntaje.</p>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <button onclick="ucCobarde()" class="glass p-4 rounded-2xl font-black text-red-400 border border-red-500/30 touch-feedback ripple">
+                                🏳️ No juego<br><span class="text-xs text-slate-400 font-normal">1 trago</span>
+                            </button>
+                            <button onclick="ucStartEscalera()" class="p-4 rounded-2xl font-black text-slate-950 touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                                ▶️ Jugar<br><span class="text-xs font-normal">Arriesgar</span>
+                            </button>
+                        </div>
+                    </div>`;
+                }
+
+                if (phase === 'escalera') {
+                    const step = uc.currentStep; // 0-3
+                    const card = uc.drawnCards[step];
+                    const prevCard = step > 0 ? uc.drawnCards[step - 1] : null;
+                    const isRed = card && ['♥', '♦'].includes(card.suit);
+
+                    if (!card) return `<div class="text-center py-8"><p>Error: carta no disponible</p></div>`;
+
+                    // Indicadores de pasos
+                    const stepDots = Array.from({length:4}, (_,i) => {
+                        let cls = 'step-dot';
+                        if (i < step) cls += ' done';
+                        else if (i === step) cls += ' active';
+                        return `<div class="${cls}"></div>`;
+                    }).join('');
+
+                    const cardDisplay = uc.revealed ? `
+                        <div class="card-reveal flex flex-col items-center justify-center gap-2">
+                            <span class="text-7xl font-black ${isRed ? 'card-suit-red' : 'card-suit-black'}">${card.rank}</span>
+                            <span class="text-5xl ${isRed ? 'card-suit-red' : 'card-suit-black'}">${card.suit}</span>
+                            ${step === 0 ? `<span class="text-sm text-slate-400 mt-1">${card.value % 2 === 0 ? 'Par ✓' : 'Impar ✓'}</span>` : ''}
+                        </div>
+                    ` : `
+                        <div class="flex flex-col items-center gap-2 opacity-60">
+                            <span class="text-7xl">🂠</span>
+                            <span class="text-slate-400 text-sm">Carta boca abajo</span>
+                        </div>
+                    `;
+
+                    // Botones según el paso y estado
+                    let actionButtons = '';
+                    if (!uc.revealed) {
+                        if (step === 0) { // Par/Impar
+                            actionButtons = `
+                            <div class="grid grid-cols-2 gap-3">
+                                <button onclick="ucGuess('par')" class="glass p-4 rounded-2xl font-black text-white border border-white/20 touch-feedback ripple text-lg">Par<br><span class="text-xs font-normal text-slate-400">2,4,6,8,10,Q</span></button>
+                                <button onclick="ucGuess('impar')" class="glass p-4 rounded-2xl font-black text-white border border-white/20 touch-feedback ripple text-lg">Impar<br><span class="text-xs font-normal text-slate-400">3,5,7,9,J,K</span></button>
+                            </div>`;
+                        } else if (step === 1) { // Mayor/Menor
+                            actionButtons = `
+                            <div class="space-y-2">
+                                <p class="text-center text-xs text-slate-400">Carta anterior: <span class="font-bold text-white">${prevCard.rank}${prevCard.suit}</span> (${prevCard.value})</p>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <button onclick="ucGuess('mayor')" class="glass p-4 rounded-2xl font-black text-white border border-white/20 touch-feedback ripple text-lg">Mayor ↑<br><span class="text-xs font-normal text-slate-400">&gt; ${prevCard.value}</span></button>
+                                    <button onclick="ucGuess('menor')" class="glass p-4 rounded-2xl font-black text-white border border-white/20 touch-feedback ripple text-lg">Menor ↓<br><span class="text-xs font-normal text-slate-400">&lt; ${prevCard.value}</span></button>
+                                </div>
+                            </div>`;
+                        } else if (step === 2) { // Rojo/Negro
+                            actionButtons = `
+                            <div class="grid grid-cols-2 gap-3">
+                                <button onclick="ucGuess('rojo')" class="glass p-4 rounded-2xl font-black text-red-400 border border-red-500/30 touch-feedback ripple text-lg">🔴 Rojo<br><span class="text-xs font-normal text-slate-400">♥ ♦</span></button>
+                                <button onclick="ucGuess('negro')" class="glass p-4 rounded-2xl font-black text-white border border-white/20 touch-feedback ripple text-lg">⚫ Negro<br><span class="text-xs font-normal text-slate-400">♠ ♣</span></button>
+                            </div>`;
+                        } else if (step === 3) { // Palo
+                            actionButtons = `
+                            <div class="grid grid-cols-2 gap-3">
+                                <button onclick="ucGuess('♠')" class="glass p-4 rounded-2xl font-black text-white border border-white/20 touch-feedback ripple">♠ Pica</button>
+                                <button onclick="ucGuess('♥')" class="glass p-4 rounded-2xl font-black text-red-400 border border-red-500/20 touch-feedback ripple">♥ Corazón</button>
+                                <button onclick="ucGuess('♦')" class="glass p-4 rounded-2xl font-black text-red-400 border border-red-500/20 touch-feedback ripple">♦ Diamante</button>
+                                <button onclick="ucGuess('♣')" class="glass p-4 rounded-2xl font-black text-white border border-white/20 touch-feedback ripple">♣ Trébol</button>
+                            </div>`;
+                        }
+                    } else if (uc.lastGuessCorrect) {
+                        // Adivinó correctamente
+                        actionButtons = step < 3 ? `
+                        <div class="space-y-3">
+                            <div class="bg-emerald-500/20 border border-emerald-500/40 rounded-2xl p-4 text-center">
+                                <p class="text-emerald-400 font-black text-lg">✅ ¡Correcto! +${stepPoints[step]} pto${stepPoints[step]>1?'s':''}</p>
+                                <p class="text-slate-400 text-xs mt-1">Tragos acumulados: ${uc.currentDrinks}</p>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <button onclick="ucPlantarse()" class="glass p-4 rounded-2xl font-bold text-slate-300 border border-white/10 touch-feedback ripple">
+                                    🛑 Plantarse<br><span class="text-xs font-normal text-slate-400">Guardar puntos</span>
+                                </button>
+                                <button onclick="ucContinuar()" class="p-4 rounded-2xl font-black text-slate-950 touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                                    ▶️ Continuar<br><span class="text-xs font-normal">+${stepPoints[step+1]} pts</span>
+                                </button>
+                            </div>
+                        </div>` : `
+                        <div class="space-y-3">
+                            <div class="bg-emerald-500/20 border border-emerald-500/40 rounded-2xl p-4 text-center">
+                                <p class="text-emerald-400 font-black text-xl">🏆 ¡Escalera Completa!</p>
+                                <p class="text-slate-300 mt-1">+${uc.currentPoints} puntos ganados</p>
+                                <p class="text-slate-400 text-xs">Tragos: ${uc.currentDrinks}</p>
+                            </div>
+                            <button onclick="ucFinalizarTurno(true)" class="w-full p-5 rounded-2xl font-black text-slate-950 text-lg touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                                Finalizar Turno ✓
+                            </button>
+                        </div>`;
+                    } else {
+                        // Falló
+                        actionButtons = step < 3 ? `
+                        <div class="space-y-3">
+                            <div class="bg-red-500/20 border border-red-500/40 rounded-2xl p-4 text-center">
+                                <p class="text-red-400 font-black text-lg">❌ ¡Incorrecto! +1 trago</p>
+                                <p class="text-slate-400 text-xs mt-1">Tragos acumulados: ${uc.currentDrinks}</p>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <button onclick="ucAceptarDerrota()" class="glass p-4 rounded-2xl font-bold text-red-400 border border-red-500/30 touch-feedback ripple">
+                                    🍺 Aceptar<br><span class="text-xs font-normal text-slate-400">${uc.currentDrinks} trago${uc.currentDrinks!==1?'s':''}</span>
+                                </button>
+                                <button onclick="ucRevancha()" class="p-4 rounded-2xl font-black text-slate-950 touch-feedback ripple" style="background:linear-gradient(135deg,#ef4444,#dc2626);">
+                                    ⚔️ Revancha<br><span class="text-xs font-normal">Carta ${step+2}</span>
+                                </button>
+                            </div>
+                        </div>` : `
+                        <div class="space-y-3">
+                            <div class="bg-red-500/20 border border-red-500/40 rounded-2xl p-4 text-center">
+                                <p class="text-red-400 font-black">❌ Carta 4 fallada — sin revancha</p>
+                                <p class="text-slate-300 mt-1">Tragos: ${uc.currentDrinks}</p>
+                            </div>
+                            <button onclick="ucAceptarDerrota()" class="w-full bg-red-600 p-4 rounded-2xl font-black text-white text-lg touch-feedback ripple">
+                                🍺 Aceptar derrota
+                            </button>
+                        </div>`;
+                    }
+
+                    return `
+                    <div class="space-y-4 animate-fade-in py-4">
+                        ${scoreBoard}
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-xs text-amber-400 font-bold uppercase tracking-widest">Carta ${step+1}/4 — ${stepNames[step]}</p>
+                                <h2 class="text-xl font-black uppercase">${player.name}</h2>
+                            </div>
+                            <div class="flex gap-1">${stepDots}</div>
+                        </div>
+                        <div class="glass p-8 rounded-3xl flex flex-col items-center justify-center min-h-[200px] border border-amber-500/20 relative overflow-hidden">
+                            <div class="absolute -top-8 -right-8 text-8xl opacity-5">🃏</div>
+                            <div class="text-center">${cardDisplay}</div>
+                            ${uc.revealed && uc.currentPoints > 0 ? `<div class="mt-4 bg-amber-500/10 px-4 py-2 rounded-xl border border-amber-500/20"><p class="text-amber-400 font-bold text-sm">Total turno: +${uc.currentPoints} pts</p></div>` : ''}
+                        </div>
+                        ${actionButtons}
+                    </div>`;
+                }
+
+                if (phase === 'revancha') {
+                    const card = uc.revanchaCard;
+                    const isRed = card && ['♥', '♦'].includes(card.suit);
+                    return `
+                    <div class="space-y-4 animate-fade-in py-4">
+                        ${scoreBoard}
+                        <div class="text-center space-y-1">
+                            <p class="text-xs text-red-400 font-bold uppercase tracking-widest">⚔️ REVANCHA — Carta ${uc.currentStep+2}</p>
+                            <h2 class="text-xl font-black uppercase">${player.name}</h2>
+                        </div>
+                        <div class="glass p-8 rounded-3xl border border-red-500/40 text-center space-y-2">
+                            <p class="text-slate-400 text-xs">Si ganás: cancela trago + <span class="text-emerald-400 font-bold">+${stepPoints[uc.currentStep-1] || 1} pts</span></p>
+                            <p class="text-slate-400 text-xs">Si perdés: <span class="text-red-400 font-bold">2 tragos + -${stepPoints[uc.currentStep-1] || 1} pts</span></p>
+                            ${card ? `
+                            <div class="card-reveal flex flex-col items-center gap-2 mt-4">
+                                <span class="text-7xl font-black ${isRed ? 'card-suit-red' : 'card-suit-black'}">${card.rank}</span>
+                                <span class="text-5xl ${isRed ? 'card-suit-red' : 'card-suit-black'}">${card.suit}</span>
+                            </div>
+                            ` : `<div class="text-6xl mt-4">🂠</div>`}
+                        </div>
+                        ${!card ? `
+                        <div class="grid grid-cols-2 gap-3">
+                            <button onclick="ucGuessRevancha('mayor')" class="glass p-4 rounded-2xl font-black touch-feedback">Mayor ↑</button>
+                            <button onclick="ucGuessRevancha('menor')" class="glass p-4 rounded-2xl font-black touch-feedback">Menor ↓</button>
+                        </div>` : `
+                        <button onclick="ucFinalizarTurno(${uc.lastRevanchaCorrect})" class="w-full p-4 rounded-2xl font-black text-slate-950 touch-feedback" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                            Continuar →
+                        </button>`}
+                    </div>`;
+                }
+
+                if (phase === 'final') {
+                    const sorted = [...uc.players].sort((a,b) => b.score - a.score);
+                    const winner = sorted[0];
+                    const loser = sorted[sorted.length-1];
+                    const isTie = sorted.filter(p => p.score === winner.score).length > 1;
+
+                    return `
+                    <div class="space-y-5 animate-fade-in py-4">
+                        <div class="text-center space-y-2">
+                            <div style="font-size:3rem;">🏆</div>
+                            <h2 class="text-3xl font-black gradient-gold uppercase">¡Fin del Torneo!</h2>
+                        </div>
+
+                        <!-- Podio -->
+                        <div class="space-y-3">
+                            ${sorted.map((pl, i) => {
+                                const isWinner = pl.score === winner.score;
+                                const isLoser = pl.score === loser.score && i === sorted.length-1;
+                                return `
+                                <div class="glass p-4 rounded-2xl flex items-center gap-4 border ${isWinner ? 'border-amber-500/40 bg-amber-500/5' : isLoser ? 'border-red-500/30 bg-red-500/5' : 'border-white/5'}">
+                                    <span class="text-2xl">${isWinner ? '🥇' : i===1 ? '🥈' : isLoser ? '💀' : '🥉'}</span>
+                                    <div class="flex-1">
+                                        <p class="font-black text-white">${pl.name}</p>
+                                        <p class="text-xs text-slate-400">Turno ${pl.turnsPlayed}/3 completados</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="font-black text-xl ${pl.score >= 0 ? 'text-emerald-400' : 'text-red-400'}">${pl.score >= 0 ? '+' : ''}${pl.score}</p>
+                                        <p class="text-xs text-slate-500">puntos</p>
+                                    </div>
+                                </div>`;
+                            }).join('')}
+                        </div>
+
+                        <!-- Premios/Castigos -->
+                        <div class="glass p-5 rounded-3xl border border-amber-500/20 space-y-3">
+                            <div class="bg-amber-500/10 rounded-2xl p-4 border border-amber-500/20">
+                                <p class="text-amber-400 font-black">🥇 ${winner.name} GANA</p>
+                                <p class="text-slate-300 text-sm">${isTie ? 'Empate: reparten' : 'Asigna'} 4 tragos entre los demás</p>
+                            </div>
+                            <div class="bg-red-500/10 rounded-2xl p-4 border border-red-500/20">
+                                <p class="text-red-400 font-black">💀 ${loser.name} PIERDE</p>
+                                <p class="text-slate-300 text-sm">Toma 1 trago de castigo</p>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <button onclick="initUltimaCartaLocal()" class="glass p-4 rounded-2xl font-bold text-amber-400 border border-amber-500/30 touch-feedback ripple">
+                                🔄 Revancha
+                            </button>
+                            <button onclick="changeView('menu')" class="glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                                🏠 Menú
+                            </button>
+                        </div>
+                    </div>`;
+                }
+
+                return `<div class="text-center py-8 text-slate-400">Cargando...</div>`;
+            },
+
+            roomLobby: () => {
+                const room = state.roomState;
+                if (!room || !room.code) {
+                    return `
+                    <div class="space-y-6 animate-fade-in py-4">
+                        <div class="text-center space-y-2">
+                            <div style="font-size:3rem;">📡</div>
+                            <h2 class="text-2xl font-black gradient-gold uppercase">Sala Online</h2>
+                            <p class="text-slate-400 text-sm">Jugá La Última Carta en tiempo real</p>
+                        </div>
+
+                        <div class="space-y-4">
+                            <!-- Crear sala -->
+                            <div class="glass p-6 rounded-3xl border border-amber-500/20 space-y-4">
+                                <h3 class="font-black text-amber-400 uppercase text-sm tracking-widest">Crear Nueva Sala</h3>
+                                <input id="host-name-input" type="text" placeholder="Tu nombre..."
+                                    class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                    value="${state.players && state.players[0] ? (state.players[0].name || '') : ''}" />
+                                <button onclick="createRoom()" class="w-full p-4 rounded-2xl font-black text-slate-950 text-lg touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                                    🚀 Crear Sala
+                                </button>
+                            </div>
+
+                            <!-- Unirse a sala -->
+                            <div class="glass p-6 rounded-3xl border border-white/10 space-y-4">
+                                <h3 class="font-black text-slate-300 uppercase text-sm tracking-widest">Unirse a Sala Existente</h3>
+                                <input id="room-code-input" type="text" placeholder="Código (ej: AS92)"
+                                    maxlength="4"
+                                    class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white text-center font-black text-xl uppercase focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                    oninput="this.value=this.value.toUpperCase()" />
+                                <input id="guest-name-input" type="text" placeholder="Tu nombre..."
+                                    class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                                <button onclick="joinRoom()" class="w-full p-4 rounded-2xl font-bold text-white bg-slate-700 hover:bg-slate-600 touch-feedback ripple">
+                                    🚪 Unirse
+                                </button>
+                            </div>
+                        </div>
+
+                        <button onclick="changeView('ultimaCarta')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">← Volver</button>
+                    </div>`;
+                }
+
+                // Sala creada/unida
+                const players = room.players || [];
+                const isHost = room.isHost;
+                return `
+                <div class="space-y-6 animate-fade-in py-4">
+                    <div class="text-center space-y-3">
+                        <p class="text-xs text-amber-400 font-bold uppercase tracking-widest">${isHost ? '👑 Sos el Anfitrión' : '🙋 Estás como Invitado'}</p>
+                        <div class="glass p-6 rounded-3xl border pulse-border">
+                            <p class="text-slate-400 text-xs mb-1">Código de Sala</p>
+                            <div class="room-code-display">${room.code}</div>
+                            <p class="text-slate-500 text-xs mt-1">Compartí este código</p>
+                        </div>
+                    </div>
+
+                    <div class="glass p-5 rounded-3xl border border-white/5">
+                        <p class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Jugadores en Sala (${players.length})</p>
+                        <div class="space-y-2">
+                            ${players.map((p,i) => `
+                                <div class="flex items-center gap-3 p-3 bg-slate-800/50 rounded-xl">
+                                    <span class="text-xl">${['🔵','🟢','🟡','🔴','🟣','🟠'][i%6]}</span>
+                                    <span class="font-bold">${p.name}</span>
+                                    ${i === 0 ? '<span class="ml-auto text-xs text-amber-400 font-bold">HOST</span>' : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    ${isHost ? `
+                    <button onclick="startOnlineGame()" class="w-full p-5 rounded-2xl font-black text-slate-950 text-lg touch-feedback ripple ${players.length < 2 ? 'opacity-50 pointer-events-none' : ''}" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                        ${players.length < 2 ? '⏳ Esperando jugadores...' : '▶️ Iniciar Partida'}
+                    </button>
+                    ` : `
+                    <div class="glass p-4 rounded-2xl border border-amber-500/20 text-center">
+                        <p class="text-amber-400 text-sm">⏳ Esperando que el host inicie la partida...</p>
+                    </div>
+                    `}
+
+                    <button onclick="leaveRoom()" class="w-full glass p-4 rounded-2xl font-bold text-red-400 border border-red-500/20 touch-feedback">
+                        🚪 Salir de la Sala
+                    </button>
+                </div>`;
+            },
+        };
+
+        function iniciarJuego(view = 'menu') {
+            state.gameStarted = true;
+            changeView(view);
+        }
+
+        function changeView(view) {
+            console.log("Changing view to:", view);
+            try {
+                // Limpieza al salir de juegos específicos
+
+                // Al entrar a Toxic siempre mostrar la pantalla de selección
+                if (view === 'toxic') {
+                    state.toxicIndex = -1;
+                }
+                
+                state.view = view;
+                saveState();
+                render();
+                window.scrollTo(0, 0);
+            } catch (e) {
+                console.error("Error in changeView:", e);
+            }
+        }
+
+        // El listener de back-btn ahora está inline en el HTML para máxima compatibilidad
+
+        function startToxicGame() {
+            resetToxicDeck();
+            state.toxicIndex = 0;
+            state.currentPlayerIndex = 0;
+            saveState();
+            render();
+        }
+
+
+        function drawToxicCard() {
+            let filteredDeck = TOXIC_CARDS;
+            if (!state.toxicCategory.includes('TODAS') && state.toxicCategory.length > 0) {
+                filteredDeck = TOXIC_CARDS.filter(c => state.toxicCategory.includes(c.cat));
+            }
+
+            state.toxicIndex++;
+            if (state.toxicIndex >= filteredDeck.length) {
+                state.toxicDeck = shuffleArray([...filteredDeck]);
+                state.toxicIndex = 0;
+                showToast('🔄 Se barajó el mazo nuevamente');
+            } else if (state.toxicIndex === 0) {
+                state.toxicDeck = shuffleArray([...filteredDeck]);
+            }
+
+            state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
+            saveState();
+            render();
+        }
+
+        function toggleSabioMode() {
+            state.sabio.mode = state.sabio.mode === 'jefe' ? 'participante' : 'jefe';
+            saveState();
+            render();
+        }
+
+        function updateSabioDrinks(val) {
+            state.sabio.drinks += val;
+            saveState();
+            render();
+        }
+
+        function drawPokerCard() {
+            state.pokerIndex++;
+            if (state.pokerIndex >= state.pokerDeck.length || state.pokerIndex === -1) {
+                state.pokerDeck = shuffleArray([...POKER_CARDS]);
+                state.pokerIndex = 0;
+                showToast('🔄 Se barajó el mazo nuevamente');
+            }
+            state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
+            saveState();
+            render();
+        }
+
+        function filterLib() {
+            const resultsContainer = document.getElementById('lib-results');
+            const countContainer = document.getElementById('lib-count');
+            if (!resultsContainer) return;
+            
+            const searchInput = document.getElementById('lib-search');
+            const query = searchInput ? searchInput.value.toLowerCase() : '';
+            
+            const trashArray = (juego) => state.trash && state.trash[juego] ? state.trash[juego] : [];
+            let allCardsHtml = '';
+            let totalItems = 0;
+
+            if (state.libTab === 'papelera') {
+                let trashItems = [];
+                const types = ['toxic', 'poker', 'sinexcusas', 'quienEsMas', 'bomba', 'cadena', 'dilema', 'mimica'];
+                types.forEach(t => {
+                    trashArray(t).forEach(id => { trashItems.push({ type: t, id: id }); });
+                });
+                
+                totalItems = trashItems.length;
+
+                if (trashItems.length === 0) {
+                    allCardsHtml = `<div class="text-center text-slate-500 py-12">La papelera está vacía</div>`;
+                } else {
+                    allCardsHtml = trashItems.map(item => {
+                        let label = item.type + " - " + item.id;
+                        if (item.type === 'toxic') {
+                            const c = TOXIC_CARDS.find(x => String(x.id) === item.id);
+                            if (c) label = `🔥 ${c.title}`;
+                        } else if (item.type === 'poker') {
+                            const c = POKER_CARDS.find(x => String(x.id) === item.id);
+                            if (c) label = `🃏 ${c.title}`;
+                        } else if (item.type === 'dilema') {
+                            label = `👑 Dilema: ${item.id.split('|')[0]}...`;
+                        } else if (item.type === 'sinexcusas') {
+                            const c = SIN_EXCUSAS_CARDS.find(x => String(x.id) === item.id);
+                            if (c) label = `🍻 ${c.body ? c.body.substring(0,40)+'...' : item.id}`;
+                        } else {
+                            label = `[${item.type}] ${item.id.substring(0, 40)}`;
+                        }
+                        return `
+                            <div class="glass p-4 rounded-xl flex justify-between items-center bg-red-950/20 border-red-500/20 group animate-fade-in">
+                                <span class="text-sm font-bold text-slate-300 truncate pr-4">${label}</span>
+                                <button onclick="restaurarDePapelera('${item.type}', '${item.id.replace(/'/g, "\\'")}')" class="bg-emerald-600/20 text-emerald-400 px-3 py-2 rounded-lg font-bold text-xs hover:bg-emerald-600/40 touch-feedback ripple border border-emerald-500/30 shrink-0">♻️ Restaurar</button>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            } else {
+                let items = [];
+                if (state.libTab === 'toxic') items = TOXIC_CARDS.filter(c => !trashArray('toxic').includes(String(c.id))).map(c => ({ id: c.id, label: `[${c.cat}] ${c.title} - ${c.text}`, obj: c }));
+                else if (state.libTab === 'poker') items = POKER_CARDS.filter(c => !trashArray('poker').includes(String(c.id))).map(c => ({ id: c.id, label: `[${c.category}] ${c.title} - ${c.text}`, obj: c }));
+                
+                else if (state.libTab === 'quienEsMas') items = QUIEN_ES_MAS.filter(c => !trashArray('quienEsMas').includes(c)).map(c => ({ id: c, label: c }));
+                else if (state.libTab === 'bomba') items = CATEGORIAS_BOMBA.filter(c => !trashArray('bomba').includes(c)).map(c => ({ id: c, label: c }));
+                else if (state.libTab === 'cadena') items = MICRO_RETOS.filter(c => !trashArray('cadena').includes(c)).map(c => ({ id: c, label: c }));
+                else if (state.libTab === 'dilema') items = DILEMAS_REY.filter(c => !trashArray('dilema').includes(c.a + "|" + c.b)).map(c => ({ id: c.a + "|" + c.b, label: `A: ${c.a} // B: ${c.b}` }));
+                else if (state.libTab === 'mimica') items = PALABRAS_MIMICA.filter(c => !trashArray('mimica').includes(c)).map(c => ({ id: c, label: c }));
+
+                // Filter explicitly by search query
+                if (query) items = items.filter(i => i.label.toLowerCase().includes(query));
+
+                totalItems = items.length;
+                const visibleItems = items.slice(0, 100);
+
+                if (visibleItems.length === 0) {
+                    allCardsHtml = `<div class="text-center text-slate-500 py-12">No hay elementos</div>`;
+                } else {
+                    allCardsHtml = visibleItems.map(item => {
+                        if (state.libTab === 'toxic' || state.libTab === 'poker') {
+                            const card = item.obj;
+                            return `
+                                <div onclick="previewCard('${state.libTab}', '${String(item.id).replace(/'/g, "\\'")}')" class="cursor-pointer glass p-6 rounded-[2.5rem] border-white/5 space-y-4 relative overflow-hidden group hover:border-white/20 transition-colors">
+                                    <div class="absolute top-4 right-4 flex gap-2 z-20">
+                                        <button onclick="event.stopPropagation(); previewCard('${state.libTab}', '${String(item.id).replace(/'/g, "\\'")}')" class="text-slate-300 bg-white/5 hover:bg-emerald-500/20 hover:text-emerald-400 w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all shadow-md">👁️</button>
+                                        <button onclick="event.stopPropagation(); moverAPapelera('${state.libTab}', '${String(item.id).replace(/'/g, "\\'")}')" class="text-slate-400 bg-white/5 hover:bg-red-500/20 hover:text-red-500 w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all shadow-md">✕</button>
+                                    </div>
+                                    <div class="absolute -right-4 -top-4 text-4xl opacity-[0.03] rotate-12">${state.libTab === 'toxic' ? '🔥' : '🃏'}</div>
+                                    <div class="flex justify-between items-start pr-24 pointer-events-none">
+                                        <span class="text-[9px] font-black ${state.libTab === 'toxic' ? 'gold-text' : 'text-red-500'} tracking-[0.2em] uppercase border ${state.libTab === 'toxic' ? 'border-amber-500/20 bg-amber-500/5' : 'border-red-500/20 bg-red-500/5'} px-3 py-1 rounded-full">${card.cat || card.category}</span>
+                                        <div class="flex items-center gap-1.5 bg-slate-950/50 px-3 py-1 rounded-xl border border-white/5">
+                                            <span class="text-[10px]">🥃</span>
+                                            <span class="text-[10px] font-black text-white uppercase">${card.drink}</span>
+                                        </div>
+                                    </div>
+                                    <div class="pr-6">
+                                        <h4 class="font-bold text-white text-lg tracking-tight mb-1">${card.title}</h4>
+                                        <p class="text-slate-400 text-sm leading-relaxed">${card.text}</p>
+                                    </div>
+                                </div>
+                            `;
+                        } else if (item.isImg) {
+                            return `
+                                <div onclick="previewCard('${state.libTab}', '${item.id.replace(/'/g, "\\'")}')" class="cursor-pointer glass p-2 rounded-2xl relative flex gap-4 pr-24 items-center hover:border-white/20 transition-colors">
+                                    <div class="w-16 h-24 bg-slate-900 rounded-lg overflow-hidden flex-shrink-0 pointer-events-none">
+                                        <img src="${item.id}" class="w-full h-full object-cover mix-blend-screen" loading="lazy" />
+                                    </div>
+                                    <span class="text-sm font-bold text-slate-300 truncate pointer-events-none">${item.id.split('/').pop().replace('.jpg','')}</span>
+                                    <div class="absolute top-1/2 -translate-y-1/2 right-4 flex gap-2 z-20">
+                                        <button onclick="event.stopPropagation(); previewCard('${state.libTab}', '${item.id.replace(/'/g, "\\'")}')" class="text-slate-300 bg-white/5 hover:bg-emerald-500/20 hover:text-emerald-400 w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all shadow-md">👁️</button>
+                                        <button onclick="event.stopPropagation(); moverAPapelera('${state.libTab}', '${item.id.replace(/'/g, "\\'")}')" class="text-slate-400 bg-white/5 hover:bg-red-500/20 hover:text-red-500 w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all shadow-md">✕</button>
+                                    </div>
+                                </div>
+                            `;
+                        } else {
+                            return `
+                                <div class="glass p-4 rounded-xl relative pr-16 items-center flex min-h-[4rem]">
+                                    <span class="text-sm text-slate-300 font-bold">${item.label.replace('|', ' 🆚 ')}</span>
+                                    <button onclick="moverAPapelera('${state.libTab}', '${item.id.replace(/'/g, "\\'")}')" class="absolute top-1/2 -translate-y-1/2 right-4 text-slate-400 bg-white/5 hover:bg-red-500/20 hover:text-red-500 w-10 h-10 rounded-full flex items-center justify-center font-bold z-10 transition-all shadow-md">✕</button>
+                                </div>
+                            `;
+                        }
+                    }).join('');
+                }
+            }
+            
+            resultsContainer.innerHTML = allCardsHtml;
+            if (countContainer) {
+                const suffix = totalItems > 100 ? ' (Mostrando 100)' : '';
+                countContainer.innerText = 'Total: ' + totalItems + ' elementos' + suffix;
+            }
+        }
+
+        function render() {
+            const container = document.getElementById('game-container');
+            const headerTitle = document.getElementById('header-title');
+            const backBtn = document.getElementById('back-btn');
+
+            if (state.view === 'menu') {
+                headerTitle.innerText = "As Bajo La Manga";
+                backBtn.classList.add('hidden');
+            } else {
+                // Formateo especial para O Se Caga
+                const titleMap = { sinexcusas: 'SIN EXCUSAS', quienEsMas: '¿QUIÉN ES MÁS?', retoCadena: 'RETO EN CADENA', dilemaRey: 'DILEMA DEL REY', mimicaExpress: 'MÍMICA EXPRESS' }; const title = titleMap[state.view] || state.view.toUpperCase().replace('_', ' ');
+                headerTitle.innerText = title;
+                backBtn.classList.remove('hidden');
+            }
+
+            if (views[state.view]) {
+                container.innerHTML = views[state.view]();
+            } else {
+                console.warn('Vista desconocida:', state.view, '→ welcome');
+                state.view = 'welcome';
+                container.innerHTML = views.welcome();
+            }
+
+            // Add card flip animation on render
+            const cardElements = container.querySelectorAll('.glass.rounded-\\[2\\.5rem\\]');
+            cardElements.forEach(el => {
+                if (state.view !== 'menu' && state.view !== 'biblioteca') {
+                    addCardFlipAnimation(el);
+                }
+            });
+        }
+
+        // Initialize touch event listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            const gameContainer = document.getElementById('game-container');
+            if (gameContainer) {
+                gameContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
+                gameContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
+            }
+
+
+// Service Worker removido (sw.js eliminado)
+        });
+
+        // Initial render
+        render();
+
+        // ========================================
+        // GESTIÓN DE JUGADORES
+        // ========================================
+
+        function addPlayer() {
+            const input = document.getElementById('playerNameInput');
+            const name = input?.value.trim();
+            if (!name) return showToast('✍️ Escribe un nombre');
+
+            if (!state.players) state.players = [];
+            if (state.players.length >= 20) return showToast('⚠️ Máximo 20 jugadores');
+            if (state.players.some(p => p.name === name)) return showToast('❌ Ya existe ese nombre');
+
+            state.players.push({ name });
+            input.value = '';
+            vibrate(30);
+            render();
+        }
+
+        function removePlayer(index) {
+            state.players.splice(index, 1);
+            vibrate(50);
+            render();
+        }
+
+        function iniciarJuego(gameName) {
+            if (state.players.length < 2) return showToast('⚠️ Mínimo 2 jugadores');
+            state.gameStarted = true;
+            state.currentPlayerIndex = 0;
+            vibrate([50, 100]);
+            // Si viene del setup global, ir al menú; si viene de un juego, ir al juego
+            changeView(gameName || 'menu');
+        }
+
+        // ========================================
+        // ¿QUIÉN ES MÁS?
+        // ========================================
+
+        function nuevaPreguntaQuienEsMas() {
+            if (!state.quienEsMas) state.quienEsMas = { usedQuestions: [] };
+
+            // Si ya usamos todas, reiniciar
+            const available = QUIEN_ES_MAS.filter((_, i) => !state.quienEsMas.usedQuestions.includes(i) && !state.trash.quienEsMas.includes(QUIEN_ES_MAS[i]));
+            if (available.length === 0) {
+                state.quienEsMas.usedQuestions = [];
+                showToast('🔄 Preguntas reiniciadas');
+            }
+
+            const availableQuestions = QUIEN_ES_MAS.filter((_, i) => !state.quienEsMas.usedQuestions.includes(i) && !state.trash.quienEsMas.includes(QUIEN_ES_MAS[i]));
+            const randomIndex = Math.floor(Math.random() * availableQuestions.length);
+            const question = availableQuestions[randomIndex];
+            const originalIndex = QUIEN_ES_MAS.indexOf(question);
+
+            state.quienEsMas.currentQuestion = question;
+            state.quienEsMas.usedQuestions.push(originalIndex);
+
+            vibrate(30);
+            saveState();
+            render();
+        }
+
+        function seleccionarGanadorQuien(playerName) {
+            showToast(`🍺 ${playerName} bebe 1 trago`);
+            vibrate([50, 100, 50]);
+        }
+
+        // ========================================
+        // BOMBA DE PALABRAS
+        // ========================================
+
+        function iniciarBomba() {
+            if (!state.bomba) state.bomba = {};
+
+            const availableCat = CATEGORIAS_BOMBA.filter(c => !state.trash.bomba.includes(c));
+            if (availableCat.length === 0) return showToast('⚠️ No hay categorías en la bomba');
+            const randomCat = availableCat[Math.floor(Math.random() * availableCat.length)];
+            state.bomba.currentCategory = randomCat;
+            state.bomba.isActive = true;
+            state.bomba.timerDuration = 10 + Math.floor(Math.random() * 21); // 10-30 segundos
+
+            vibrate([50, 100, 50]);
+            saveState();
+            render();
+
+            // Auto-detonar después del tiempo aleatorio
+            setTimeout(() => {
+                if (state.bomba && state.bomba.isActive) {
+                    detonarBomba();
+                }
+            }, state.bomba.timerDuration * 1000);
+        }
+
+        function detonarBomba() {
+            if (!state.bomba) return;
+            state.bomba.isActive = false;
+            vibrate([100, 50, 100, 50, 100]);
+            showToast('💥 ¡BOMBA EXPLOTÓ! El último que habló bebe');
+            saveState();
+            render();
+        }
+
+        // ========================================
+        // RETO EN CADENA
+        // ========================================
+
+        function anadirReto() {
+            if (!state.retoCadena) state.retoCadena = { currentChain: [], usedRetos: [] };
+
+            const available = MICRO_RETOS.filter(r => !state.retoCadena.usedRetos.includes(r) && !state.trash.cadena.includes(r));
+            if (available.length === 0) {
+                state.retoCadena.usedRetos = [];
+                showToast('🔄 Retos reiniciados');
+            }
+
+            const availableRetos = MICRO_RETOS.filter(r => !state.retoCadena.usedRetos.includes(r) && !state.trash.cadena.includes(r));
+            const randomReto = availableRetos[Math.floor(Math.random() * availableRetos.length)];
+
+            state.retoCadena.currentChain.push(randomReto);
+            state.retoCadena.usedRetos.push(randomReto);
+
+            vibrate(30);
+            saveState();
+            render();
+        }
+
+        function falloReto() {
+            if (!state.retoCadena || !state.retoCadena.currentChain) return;
+
+            const count = state.retoCadena.currentChain.length;
+            if (count === 0) return showToast('⚠️ No hay retos todavía');
+
+            showToast(`❌ Falló! Bebe ${count} trago${count > 1 ? 's' : ''}`);
+            state.retoCadena.currentChain = [];
+            vibrate([100, 50, 100]);
+            saveState();
+            render();
+        }
+
+
+        // ========================================
+        // SUPABASE CONFIG
+        // ========================================
+        const SUPABASE_URL = 'https://lojhzzwrtyytjbdowayv.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxvamh6endydHl5dGpiZG93YXl2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0NTIzNDMsImV4cCI6MjA5NjAyODM0M30.ybGm52rGBCUd3KQTXJGwBFtXeFL_ac8_Grc8bR1wI2A';
+        let supabaseClient = null;
+        let realtimeChannel = null;
+
+        function initSupabase() {
+            try {
+                if (window.supabase) {
+                    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                    console.log('✅ Supabase conectado');
+                }
+            } catch(e) { console.warn('Supabase no disponible:', e); }
+        }
+
+
+        // ========================================
+        // SALAS GLOBALES — MULTIJUGADOR
+        // ========================================
+        async function crearSala() {
+            if (!supabaseClient) return showToast('⚠️ Sin conexión a internet');
+            const code = Math.floor(100000 + Math.random() * 900000).toString();
+            state.roomCode = code;
+            const now = new Date();
+            const expiresAt = new Date(now.getTime() + ROOM_INACTIVITY_MS);
+            const stateToSync = { ...state };
+            delete stateToSync.user;
+            const { error } = await supabaseClient.from('rooms').insert({
+                code, game_state: stateToSync,
+                expires_at: expiresAt.toISOString(),
+                last_activity: now.toISOString()
+            });
+            if (error) { state.roomCode = null; return showToast('❌ Error al crear sala: ' + error.message); }
+            saveState(true);
+            conectarSala(code);
+            resetInactivityTimers();
+            showToast('✅ Sala creada: ' + code);
+            render();
+        }
+
+        function conectarSala(code) {
+            if (realtimeChannel) { supabaseClient.removeChannel(realtimeChannel); realtimeChannel = null; }
+            realtimeChannel = supabaseClient.channel('room_' + code)
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `code=eq.${code}` }, (payload) => {
+                    const remoteState = payload.new.game_state;
+                    if (remoteState) {
+                        const localUser = state.user;
+                        state = { ...remoteState, user: localUser };
+                        saveState(true);
+                        render();
+                    }
+                })
+                .subscribe();
+        }
+
+        async function unirseSala() {
+            const input = document.getElementById('room-code-input');
+            const code = input?.value.trim();
+            if (!code || code.length !== 6) return showToast('✍️ Código de 6 dígitos');
+            if (!supabaseClient) return showToast('⚠️ Sin conexión');
+            const { data, error } = await supabaseClient.from('rooms').select('game_state, last_activity').eq('code', code).single();
+            if (error || !data) return showToast('❌ Sala no encontrada');
+            if (data.last_activity) {
+                const diffMs = Date.now() - new Date(data.last_activity).getTime();
+                if (diffMs > ROOM_INACTIVITY_MS) {
+                    await supabaseClient.from('rooms').delete().eq('code', code);
+                    return showToast('⏱️ Sala expirada por inactividad');
+                }
+            }
+            const localUser = state.user;
+            state = { ...data.game_state, user: localUser };
+            state.roomCode = code;
+            saveState(true);
+            conectarSala(code);
+            resetInactivityTimers();
+            showToast('✅ Conectado a sala ' + code);
+            render();
+        }
+
+        function abandonarSala() {
+            clearTimeout(_inactivityWarningTimer);
+            clearTimeout(_inactivityExpireTimer);
+            if (realtimeChannel && supabaseClient) { supabaseClient.removeChannel(realtimeChannel); realtimeChannel = null; }
+            state.roomCode = null;
+            saveState();
+            showToast('🔌 Desconectado de la sala');
+            render();
+        }
+
+        // ========================================
+        // SUPABASE AUTH
+        // ========================================
+        async function checkSession() {
+            if (!supabaseClient) return;
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            state.user = session ? session.user : null;
+            
+            if (state.user) {
+                const savedPlayers = state.user.user_metadata?.saved_players || [];
+                if (savedPlayers.length >= 2 && state.players.length < 2) {
+                    state.players = JSON.parse(JSON.stringify(savedPlayers));
+                    state.view = 'menu';
+                    saveState();
+                }
+            }
+            
+            supabaseClient.auth.onAuthStateChange((_event, session) => {
+                state.user = session ? session.user : null;
+                if (state.user && state.players.length < 2) {
+                    const savedPlayers = state.user.user_metadata?.saved_players || [];
+                    if (savedPlayers.length >= 2) {
+                        state.players = JSON.parse(JSON.stringify(savedPlayers));
+                        state.view = 'menu';
+                    }
+                }
+                saveState();
+                render();
+            });
+        }
+
+        async function updateProfilePlayers(playersArray) {
+            if (!supabaseClient || !state.user) return;
+            const { data, error } = await supabaseClient.auth.updateUser({
+                data: { saved_players: playersArray }
+            });
+            if (error) {
+                showToast('❌ Error guardando: ' + error.message);
+            } else {
+                state.user = data.user;
+                showToast('✅ Jugadores guardados en la nube');
+                saveState();
+                render();
+            }
+        }
+
+        function addProfilePlayer() {
+            const input = document.getElementById('profilePlayerInput');
+            const name = input?.value.trim();
+            if (!name) return showToast('✍️ Escribe un nombre');
+            const saved = state.user?.user_metadata?.saved_players || [];
+            if (saved.some(p => p.name.toLowerCase() === name.toLowerCase())) return showToast('⚠️ Ya existe');
+            if (saved.length >= 20) return showToast('⚠️ Máximo 20 jugadores');
+            saved.push({ name: name, score: 0 });
+            updateProfilePlayers(saved);
+        }
+
+        function removeProfilePlayer(index) {
+            const saved = state.user?.user_metadata?.saved_players || [];
+            saved.splice(index, 1);
+            updateProfilePlayers(saved);
+        }
+
+        function startWithProfilePlayers() {
+            const saved = state.user?.user_metadata?.saved_players || [];
+            if (saved.length < 2) return showToast('⚠️ Necesitas al menos 2 jugadores');
+            state.players = JSON.parse(JSON.stringify(saved));
+            state.view = 'menu';
+            saveState();
+            render();
+        }
+
+        async function signInWithSupabase() {
+            if (!supabaseClient) { showToast('⚠️ Sin conexión a Supabase'); return; }
+            const usernameRaw = document.getElementById('auth-username').value.trim();
+            const username = usernameRaw.toLowerCase().replace(/\s+/g, '');
+            const email = username + '@asbajolamanga.com';
+            const password = document.getElementById('auth-password').value.trim();
+            if (!username || !password) { showToast('⚠️ Llená todos los campos'); return; }
+            
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            if (error) {
+                showToast('❌ Error: ' + error.message);
+            } else {
+                showToast('✅ Sesión iniciada');
+                changeView('menu');
+            }
+        }
+
+        async function signUpWithSupabase() {
+            if (!supabaseClient) { showToast('⚠️ Sin conexión a Supabase'); return; }
+            const usernameRaw = document.getElementById('auth-username').value.trim();
+            const username = usernameRaw.toLowerCase().replace(/\s+/g, '');
+            const email = username + '@asbajolamanga.com';
+            const password = document.getElementById('auth-password').value.trim();
+            if (!username || !password) { showToast('⚠️ Llená todos los campos'); return; }
+            
+            const { data, error } = await supabaseClient.auth.signUp({ email, password });
+            if (error) {
+                showToast('❌ Error: ' + error.message);
+            } else {
+                showToast('✅ Cuenta creada. Por favor, iniciá sesión.');
+            }
+        }
+
+        async function signOutSupabase() {
+            if (!supabaseClient) return;
+            await supabaseClient.auth.signOut();
+            localStorage.removeItem('as_bajo_la_manga_state');
+            sessionStorage.removeItem('as_bajo_la_manga_state');
+            showToast('👋 Sesión cerrada, reiniciando...');
+            setTimeout(() => window.location.reload(), 1000);
+        }
+        // ========================================
+        // LA ÚLTIMA CARTA — LÓGICA
+        // ========================================
+        function buildDeck() {
+            const ranks = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+            const values = {'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,'J':11,'Q':12,'K':13,'A':14};
+            const suits = ['♠','♥','♦','♣'];
+            const deck = [];
+            for (const suit of suits) {
+                for (const rank of ranks) {
+                    deck.push({ rank, suit, value: values[rank] });
+                }
+            }
+            for (let i = deck.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [deck[i], deck[j]] = [deck[j], deck[i]];
+            }
+            return deck;
+        }
+
+        function initUltimaCartaLocal() {
+            const players = (state.players || []).map(p => ({
+                name: p.name || p,
+                score: 0,
+                turnsPlayed: 0
+            }));
+            if (players.length < 2) { showToast('⚠️ Mínimo 2 jugadores'); changeView('setup'); return; }
+
+            state.ultimaCarta = {
+                active: true,
+                players,
+                currentPlayerIndex: 0,
+                deck: buildDeck(),
+                deckIndex: 0,
+                totalRounds: 3 * players.length,
+                currentRound: 1,
+                phase: 'cobarde',
+                currentStep: 0,
+                currentPoints: 0,
+                currentDrinks: 0,
+                drawnCards: [],
+                revealed: false,
+                lastGuessCorrect: false,
+                revanchaCard: null,
+                lastRevanchaCorrect: false,
+            };
+            saveState();
+            changeView('ultimaCarta');
+        }
+
+        function ucDrawCard() {
+            const uc = state.ultimaCarta;
+            if (uc.deckIndex >= uc.deck.length) {
+                uc.deck = buildDeck();
+                uc.deckIndex = 0;
+            }
+            return uc.deck[uc.deckIndex++];
+        }
+
+        function ucCobarde() {
+            showToast('🏳️ Cobarde — 1 trago');
+            vibrate([50,50,100]);
+            ucAdvancePlayer();
+        }
+
+        function ucStartEscalera() {
+            const uc = state.ultimaCarta;
+            uc.phase = 'escalera';
+            uc.currentStep = 0;
+            uc.currentPoints = 0;
+            uc.currentDrinks = 0;
+            uc.revealed = false;
+            uc.drawnCards = [ucDrawCard(), ucDrawCard(), ucDrawCard(), ucDrawCard()];
+            saveState();
+            render();
+        }
+
+        function ucGuess(guess) {
+            const uc = state.ultimaCarta;
+            const card = uc.drawnCards[uc.currentStep];
+            const step = uc.currentStep;
+            let correct = false;
+
+            if (step === 0) {
+                const isPar = card.value % 2 === 0;
+                correct = (guess === 'par' && isPar) || (guess === 'impar' && !isPar);
+            } else if (step === 1) {
+                const prev = uc.drawnCards[step - 1];
+                correct = (guess === 'mayor' && card.value > prev.value) || (guess === 'menor' && card.value < prev.value);
+                if (card.value === prev.value) correct = false;
+            } else if (step === 2) {
+                const isRed = ['♥','♦'].includes(card.suit);
+                correct = (guess === 'rojo' && isRed) || (guess === 'negro' && !isRed);
+            } else if (step === 3) {
+                correct = guess === card.suit;
+            }
+
+            uc.revealed = true;
+            uc.lastGuessCorrect = correct;
+
+            if (correct) {
+                uc.currentPoints += [1,2,3,4][step];
+                if (uc.currentDrinks > 0) uc.currentDrinks = Math.max(0, uc.currentDrinks - 1);
+                vibrate(100);
+            } else {
+                uc.currentDrinks++;
+                vibrate([50,100]);
+            }
+
+            saveState();
+            render();
+        }
+
+        function ucPlantarse() {
+            ucFinalizarTurno(true);
+        }
+
+        function ucContinuar() {
+            const uc = state.ultimaCarta;
+            uc.currentStep++;
+            uc.revealed = false;
+            uc.lastGuessCorrect = false;
+            saveState();
+            render();
+        }
+
+        function ucAceptarDerrota() {
+            ucFinalizarTurno(false);
+        }
+
+        function ucRevancha() {
+            const uc = state.ultimaCarta;
+            uc.phase = 'revancha';
+            uc.revanchaCard = null;
+            saveState();
+            render();
+        }
+
+        function ucGuessRevancha(guess) {
+            const uc = state.ultimaCarta;
+            const card = ucDrawCard();
+            uc.revanchaCard = card;
+            const prevCard = uc.drawnCards[uc.currentStep];
+            const correct = (guess === 'mayor' && card.value > prevCard.value) || (guess === 'menor' && card.value < prevCard.value);
+            uc.lastRevanchaCorrect = correct;
+
+            const prevPoints = [1,2,3,4][uc.currentStep - 1] || 1;
+
+            if (correct) {
+                uc.currentDrinks = Math.max(0, uc.currentDrinks - 1);
+                uc.currentPoints += prevPoints;
+                vibrate([100,50,100]);
+            } else {
+                uc.currentDrinks++;
+                uc.currentPoints -= prevPoints;
+                vibrate([200]);
+            }
+
+            saveState();
+            render();
+        }
+
+        function ucFinalizarTurno(won) {
+            const uc = state.ultimaCarta;
+            const player = uc.players[uc.currentPlayerIndex];
+
+            if (won && uc.currentPoints > 0) {
+                player.score += uc.currentPoints;
+            } else if (!won && uc.phase === 'revancha' && !uc.lastRevanchaCorrect) {
+                if (uc.currentPoints < 0) player.score += uc.currentPoints;
+            }
+
+            player.turnsPlayed++;
+
+            const allDone = uc.players.every(p => p.turnsPlayed >= 3);
+            if (allDone) {
+                uc.phase = 'final';
+                vibrate([100,50,100,50,200]);
+                saveState();
+                render();
+                return;
+            }
+
+            ucAdvancePlayer();
+        }
+
+        function ucAdvancePlayer() {
+            const uc = state.ultimaCarta;
+            let nextIdx = (uc.currentPlayerIndex + 1) % uc.players.length;
+            let attempts = 0;
+            while (uc.players[nextIdx].turnsPlayed >= 3 && attempts < uc.players.length) {
+                nextIdx = (nextIdx + 1) % uc.players.length;
+                attempts++;
+            }
+            uc.currentPlayerIndex = nextIdx;
+            uc.currentRound++;
+            uc.phase = 'cobarde';
+            uc.currentStep = 0;
+            uc.currentPoints = 0;
+            uc.currentDrinks = 0;
+            uc.drawnCards = [];
+            uc.revealed = false;
+            saveState();
+            render();
+        }
+
+        // ========================================
+        // SUPABASE ROOMS
+        // ========================================
+        function genRoomCode() {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            return Array.from({length:4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+        }
+
+        async function createRoom() {
+            if (!supabaseClient) { showToast('⚠️ Sin conexión a Supabase'); return; }
+            const nameInput = document.getElementById('host-name-input');
+            const hostName = nameInput ? nameInput.value.trim() : '';
+            if (!hostName) { showToast('✍️ Ingresá tu nombre'); return; }
+
+            const code = genRoomCode();
+            const gameState = { status: 'waiting', players: [{ name: hostName }] };
+
+            try {
+                const { error } = await supabaseClient.from('rooms').insert({
+                    code,
+                    game_state: gameState,
+                    expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString()
+                });
+                if (error) { showToast('❌ Error: ' + error.message); return; }
+
+                state.roomState = { code, isHost: true, hostName, players: [{ name: hostName }] };
+                if (!state.players) state.players = [];
+                state.players = [{ name: hostName }];
+                saveState();
+                subscribeToRoom(code);
+                render();
+            } catch(e) { showToast('❌ ' + e.message); }
+        }
+
+        async function joinRoom() {
+            if (!supabaseClient) { showToast('⚠️ Sin conexión a Supabase'); return; }
+            const codeInput = document.getElementById('room-code-input');
+            const nameInput = document.getElementById('guest-name-input');
+            const code = codeInput ? codeInput.value.trim().toUpperCase() : '';
+            const guestName = nameInput ? nameInput.value.trim() : '';
+            if (!code || code.length !== 4) { showToast('⚠️ Código de 4 letras'); return; }
+            if (!guestName) { showToast('✍️ Ingresá tu nombre'); return; }
+
+            try {
+                const { data, error } = await supabaseClient.from('rooms').select('*').eq('code', code).single();
+                if (error || !data) { showToast('❌ Sala no encontrada'); return; }
+
+                const gs = data.game_state;
+                if (gs.status !== 'waiting') { showToast('⚠️ La partida ya comenzó'); return; }
+
+                const updatedPlayers = [...(gs.players || []), { name: guestName }];
+                try {
+                    const payload = { game_state: { ...gs, players: updatedPlayers } };
+                    const res = await casUpdateRoom(code, payload);
+                    if (res && res.error) console.warn('joinRoom update error', res.error);
+                } catch (e) { console.warn('joinRoom supabase error', e); }
+
+                state.roomState = { code, isHost: false, guestName, players: updatedPlayers };
+                saveState();
+                subscribeToRoom(code);
+                render();
+            } catch(e) { showToast('❌ ' + e.message); }
+        }
+
+        function subscribeToRoom(code) {
+            if (!supabaseClient) return;
+            if (realtimeChannel) realtimeChannel.unsubscribe();
+
+            realtimeChannel = supabaseClient.channel('room:' + code)
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: 'code=eq.' + code },
+                payload => {
+                    const gs = payload.new.game_state;
+                    if (state.roomState && gs) {
+                        state.roomState.players = gs.players;
+                        if (gs.status === 'playing') {
+                            state.ultimaCarta = gs.ultimaCarta;
+                            state.view = 'ultimaCarta';
+                        }
+                        saveState();
+                        render();
+                    }
+                }).subscribe();
+        }
+
+        async function startOnlineGame() {
+            if (!supabaseClient || !state.roomState) return;
+            const code = state.roomState.code;
+            
+            // Build initial UC state
+            const players = state.roomState.players.map(p => ({
+                name: p.name, score: 0, turnsPlayed: 0
+            }));
+            const uc = {
+                active: true, players, currentPlayerIndex: 0,
+                deck: buildDeck(), deckIndex: 0,
+                totalRounds: 3 * players.length, currentRound: 1,
+                phase: 'cobarde', currentStep: 0, currentPoints: 0, currentDrinks: 0,
+                drawnCards: [], revealed: false, lastGuessCorrect: false,
+                revanchaCard: null, lastRevanchaCorrect: false,
+                isOnline: true
+            };
+            
+            const gs = { status: 'playing', players: state.roomState.players, ultimaCarta: uc };
+            try {
+                const res = await casUpdateRoom(code, { game_state: gs });
+                if (res && res.error) console.warn('startOnlineGame update error', res.error);
+            } catch (e) { console.warn('startOnlineGame supabase error', e); }
+        }
+
+        function leaveRoom() {
+            state.roomState = null;
+            if (realtimeChannel) { realtimeChannel.unsubscribe(); realtimeChannel = null; }
+            saveState();
+            changeView('ultimaCarta');
+        }
+
+        function reiniciarRetoCadena() {
+            if (!state.retoCadena) state.retoCadena = {};
+            state.retoCadena.currentChain = [];
+            showToast('🔄 Cadena reiniciada');
+            vibrate(50);
+            saveState();
+            render();
+        }
+
+        // ========================================
+        // DILEMA DEL REY
+        // ========================================
+
+        function nuevoDilema() {
+            if (!state.dilemaRey) state.dilemaRey = {};
+
+            const availableDilemas = DILEMAS_REY.filter(c => !state.trash.dilema.includes(c.a + "|" + c.b));
+            if (availableDilemas.length === 0) return showToast('⚠️ No hay dilemas disponibles');
+            const randomDilema = availableDilemas[Math.floor(Math.random() * availableDilemas.length)];
+            state.dilemaRey.currentDilema = randomDilema;
+            state.dilemaRey.votesA = 0;
+            state.dilemaRey.votesB = 0;
+
+            vibrate(30);
+            saveState();
+            render();
+        }
+
+        function votarDilema(option) {
+            if (!state.dilemaRey) state.dilemaRey = { votesA: 0, votesB: 0 };
+
+            if (option === 'a') {
+                state.dilemaRey.votesA++;
+            } else {
+                state.dilemaRey.votesB++;
+            }
+
+            vibrate(30);
+            saveState();
+            render();
+        }
+
+        function aplicarDilema() {
+            if (!state.dilemaRey) return;
+
+            const votesA = state.dilemaRey.votesA || 0;
+            const votesB = state.dilemaRey.votesB || 0;
+
+            if (votesA + votesB === 0) return showToast('⚠️ No hay votos todavía');
+
+            const minority = Math.min(votesA, votesB);
+            const winner = votesA > votesB ? 'A' : (votesB > votesA ? 'B' : 'EMPATE');
+
+            if (winner === 'EMPATE') {
+                showToast('⚖️ ¡Empate! Todos beben 1 trago');
+            } else {
+                showToast(`👑 Opción ${winner} gana! ${minority} personas beben 2 tragos`);
+            }
+
+            vibrate([50, 100, 50]);
+
+            // Resetear votos después de aplicar
+            state.dilemaRey.votesA = 0;
+            state.dilemaRey.votesB = 0;
+            saveState();
+            render();
+        }
+
+        // ========================================
+        // MÍMICA EXPRESS
+        // ========================================
+
+        function iniciarMimica() {
+            if (!state.mimicaExpress) state.mimicaExpress = { usedWords: [] };
+
+            // Si ya usamos todas, reiniciar
+            const available = PALABRAS_MIMICA.filter((_, i) => !state.mimicaExpress.usedWords.includes(i) && !state.trash.mimica.includes(PALABRAS_MIMICA[i]));
+            if (available.length === 0) {
+                state.mimicaExpress.usedWords = [];
+                showToast('🔄 Palabras reiniciadas');
+            }
+
+            const availableWords = PALABRAS_MIMICA.filter((_, i) => !state.mimicaExpress.usedWords.includes(i) && !state.trash.mimica.includes(PALABRAS_MIMICA[i]));
+            const randomWord = availableWords[Math.floor(Math.random() * availableWords.length)];
+            const originalIndex = PALABRAS_MIMICA.indexOf(randomWord);
+
+            state.mimicaExpress.currentWord = randomWord;
+            state.mimicaExpress.usedWords.push(originalIndex);
+            state.mimicaExpress.timeLeft = 20;
+
+            vibrate([50, 100]);
+            saveState();
+            render();
+
+            // Iniciar contador
+            state.mimicaExpress.timerInterval = setInterval(() => {
+                if (!state.mimicaExpress || !state.mimicaExpress.timerInterval) {
+                    clearInterval(state.mimicaExpress?.timerInterval);
+                    return;
+                }
+
+                state.mimicaExpress.timeLeft--;
+
+                if (state.mimicaExpress.timeLeft <= 0) {
+                    detenerMimica();
+                    showToast('⏱️ ¡Tiempo terminado!');
+                    vibrate([100, 50, 100]);
+                }
+
+                render();
+            }, 1000);
+        }
+
+        function detenerMimica() {
+            if (state.mimicaExpress?.timerInterval) {
+                clearInterval(state.mimicaExpress.timerInterval);
+                state.mimicaExpress.timerInterval = null;
+                saveState();
+                render();
+            }
+        }
+
+        function resultadoMimica(adivinaron) {
+            detenerMimica();
+
+            if (adivinaron) {
+                showToast('✅ ¡Adivinaron! Actor asigna 2 tragos');
+            } else {
+                showToast('❌ No adivinaron. Actor bebe 2 tragos');
+            }
+
+            vibrate([100, 50, 100]);
+        }
+
+
+    

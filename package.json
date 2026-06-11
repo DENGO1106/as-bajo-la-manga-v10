@@ -4,5 +4,8 @@
   "description": "Juego de cartas interactivo para tomar",
   "scripts": {
     "build": "echo 'Sitio estático, sin build necesario'"
+  },
+  "dependencies": {
+    "jsdom": "^29.1.1"
   }
 }
