@@ -2198,6 +2198,10 @@
                 // Lobby de configuración inicial
                 if (!state.ultimaCarta || !state.ultimaCarta.active) {
                     const players = state.players || [];
+                    const hasAccount = !!state.user;
+                    const hasActiveRoom = !!state.roomCode && !!state.roomState;
+                    const savedRoom = hasAccount ? (state.user.user_metadata?.last_room_code || null) : null;
+
                     return `
                     <div class="space-y-6 animate-fade-in py-4">
                         <div class="text-center space-y-2">
@@ -2206,22 +2210,58 @@
                             <p class="text-slate-400 text-sm">Torneo de apuestas y riesgo</p>
                         </div>
 
-                        ${players.length < 2 ? `
-                        <div class="glass p-4 rounded-2xl border border-red-500/20 text-center">
-                            <p class="text-red-400 text-sm">⚠️ Necesitás al menos 2 jugadores</p>
-                            <button onclick="changeView('setup')" class="mt-3 bg-red-500/20 text-red-300 px-4 py-2 rounded-xl text-sm font-bold border border-red-500/30 touch-feedback">➕ Agregar jugadores</button>
+                        <!-- Si ya tienes una sala activa -->
+                        ${hasActiveRoom ? `
+                        <div class="glass p-6 rounded-3xl border border-emerald-500/30 bg-emerald-500/5 space-y-3">
+                            <p class="text-emerald-400 font-black text-sm uppercase tracking-widest">✅ Sala Activa</p>
+                            <p class="text-slate-300 text-sm">Sala <span class="font-black text-amber-400">${state.roomCode}</span> con ${state.roomState.players?.length || 0} jugador${state.roomState.players?.length !== 1 ? 'es' : ''}</p>
+                            <div class="space-y-2">
+                                <button onclick="changeView('roomLobby')" class="w-full p-4 rounded-2xl font-black text-slate-950 text-lg touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
+                                    🚀 Entrar a Sala
+                                </button>
+                                <button onclick="resetRoomAndChangeView()" class="w-full glass p-3 rounded-2xl font-bold text-slate-400 border border-slate-500/20 text-sm touch-feedback ripple">
+                                    🔄 Cambiar de Sala
+                                </button>
+                            </div>
                         </div>
                         ` : ''}
 
-                        <!-- Modos de juego -->
-                        ${players.length >= 2 ? `
+                        <!-- Si tienes cuenta pero sin sala activa -->
+                        ${hasAccount && !hasActiveRoom ? `
+                        <div class="glass p-6 rounded-3xl border border-blue-500/30 bg-blue-500/5 space-y-3">
+                            <p class="text-blue-400 font-black text-sm uppercase tracking-widest">👤 Con Cuenta</p>
+                            <p class="text-slate-300 text-sm">Hola <span class="font-black">${state.user.email.split('@')[0]}</span></p>
+                            <div class="space-y-2">
+                                ${savedRoom ? `
+                                <button onclick="rejoinLastRoom()" class="w-full p-4 rounded-2xl font-black text-slate-950 text-lg touch-feedback ripple" style="background:linear-gradient(135deg,#60a5fa,#3b82f6);">
+                                    📍 Volver a Sala ${savedRoom}
+                                </button>
+                                ` : ''}
+                                <button onclick="changeView('roomLobby')" class="w-full ${savedRoom ? 'glass border border-amber-500/20' : 'p-4 rounded-2xl font-black text-slate-950'} p-4 rounded-2xl font-bold touch-feedback ripple" style="${!savedRoom ? 'background:linear-gradient(135deg,#FFD700,#D4AF37);' : ''}">
+                                    ${savedRoom ? '🆕' : '🚀'} ${savedRoom ? 'Nueva Sala' : 'Crear / Unirse'}
+                                </button>
+                            </div>
+                        </div>
+                        ` : ''}
+
+                        <!-- Si no tienes cuenta (opción local) -->
+                        ${!hasActiveRoom ? `
                         <div class="space-y-3">
+                            ${players.length >= 2 ? `
                             <button onclick="initUltimaCartaLocal()" class="w-full p-5 rounded-3xl font-black text-slate-950 text-lg uppercase card-shadow touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
                                 🎮 Jugar en Este Dispositivo
                             </button>
-                            <button onclick="changeView('roomLobby')" class="w-full glass p-4 rounded-2xl font-bold text-amber-400 border border-amber-500/20 touch-feedback ripple flex items-center justify-center gap-2">
+                            ` : `
+                            <div class="glass p-4 rounded-2xl border border-red-500/20 text-center">
+                                <p class="text-red-400 text-sm">⚠️ Necesitás al menos 2 jugadores</p>
+                                <button onclick="changeView('setup')" class="mt-3 bg-red-500/20 text-red-300 px-4 py-2 rounded-xl text-sm font-bold border border-red-500/30 touch-feedback">➕ Agregar jugadores</button>
+                            </div>
+                            `}
+                            ${!hasAccount ? `
+                            <button onclick="changeView('roomLobby')" class="w-full glass p-4 rounded-2xl font-bold text-amber-400 border border-amber-500/20 touch-feedback ripple">
                                 📡 Crear / Unirse a Sala Online
                             </button>
+                            ` : ''}
                         </div>
                         ` : ''}
 
@@ -2489,11 +2529,14 @@
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-2 gap-3">
-                            <button onclick="initUltimaCartaLocal()" class="glass p-4 rounded-2xl font-bold text-amber-400 border border-amber-500/30 touch-feedback ripple">
+                        <div class="grid grid-cols-3 gap-2">
+                            <button onclick="initUltimaCartaLocal()" class="glass p-4 rounded-2xl font-bold text-amber-400 border border-amber-500/30 touch-feedback ripple text-sm">
                                 🔄 Revancha
                             </button>
-                            <button onclick="changeView('menu')" class="glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
+                            <button onclick="resetRoomAndChangeView()" class="glass p-4 rounded-2xl font-bold text-slate-300 border border-slate-500/20 touch-feedback ripple text-sm">
+                                🔄 Cambiar Sala
+                            </button>
+                            <button onclick="changeView('menu')" class="glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback text-sm">
                                 🏠 Menú
                             </button>
                         </div>
@@ -2506,12 +2549,14 @@
             roomLobby: () => {
                 const room = state.roomState;
                 if (!room || !room.code) {
+                    const hasAccount = !!state.user;
+                    const defaultName = state.user ? state.user.email.split('@')[0] : (state.players && state.players[0] ? (state.players[0].name || '') : '');
                     return `
                     <div class="space-y-6 animate-fade-in py-4">
                         <div class="text-center space-y-2">
                             <div style="font-size:3rem;">📡</div>
                             <h2 class="text-2xl font-black gradient-gold uppercase">Sala Online</h2>
-                            <p class="text-slate-400 text-sm">Jugá La Última Carta en tiempo real</p>
+                            <p class="text-slate-400 text-sm">${hasAccount ? 'Jugá en tiempo real (Conectado)' : 'Jugá La Última Carta en tiempo real'}</p>
                         </div>
 
                         <div class="space-y-4">
@@ -2520,7 +2565,7 @@
                                 <h3 class="font-black text-amber-400 uppercase text-sm tracking-widest">Crear Nueva Sala</h3>
                                 <input id="host-name-input" type="text" placeholder="Tu nombre..."
                                     class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                    value="${state.players && state.players[0] ? (state.players[0].name || '') : ''}" />
+                                    value="${defaultName}" />
                                 <button onclick="createRoom()" class="w-full p-4 rounded-2xl font-black text-slate-950 text-lg touch-feedback ripple" style="background:linear-gradient(135deg,#FFD700,#D4AF37);">
                                     🚀 Crear Sala
                                 </button>
@@ -2534,7 +2579,8 @@
                                     class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white text-center font-black text-xl uppercase focus:outline-none focus:ring-2 focus:ring-amber-500"
                                     oninput="this.value=this.value.toUpperCase()" />
                                 <input id="guest-name-input" type="text" placeholder="Tu nombre..."
-                                    class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                                    class="w-full bg-slate-800 px-4 py-3 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                    value="${defaultName}" />
                                 <button onclick="joinRoom()" class="w-full p-4 rounded-2xl font-bold text-white bg-slate-700 hover:bg-slate-600 touch-feedback ripple">
                                     🚪 Unirse
                                 </button>
@@ -3657,6 +3703,38 @@
             return Array.from({length:4}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
         }
 
+        async function saveLastRoomCode(code) {
+            // Guardar código de sala en el perfil si tienes cuenta
+            if (!supabaseClient || !state.user) return;
+            const { data, error } = await supabaseClient.auth.updateUser({
+                data: { last_room_code: code }
+            });
+            if (error) {
+                console.warn('Failed to save last room code:', error);
+            } else {
+                state.user = data.user;
+                saveState();
+            }
+        }
+        
+        async function saveLastRoomCode(code) {
+            // Guardar código de sala en el perfil si tienes cuenta
+            if (!supabaseClient || !state.user) return;
+            try {
+                const { data, error } = await supabaseClient.auth.updateUser({
+                    data: { last_room_code: code }
+                });
+                if (error) {
+                    console.warn('Failed to save last room code:', error);
+                } else {
+                    state.user = data.user;
+                    saveState();
+                }
+            } catch (e) {
+                console.warn('saveLastRoomCode exception:', e);
+            }
+        }
+
         async function createRoom() {
             if (!supabaseClient) { showToast('⚠️ Sin conexión a Supabase'); return; }
             const nameInput = document.getElementById('host-name-input');
@@ -3681,6 +3759,8 @@
                 state.roomState = { code, isHost: true, hostName, players: [{ name: hostName }] };
                 state.players = [{ name: hostName }];
                 state.currentPlayerIndex = 0;
+                // NEW: Guardar código de sala en perfil si tienes cuenta
+                await saveLastRoomCode(code);
                 subscribeToRoom(code);
                 saveState(true); // guardar local sin subir (la sala ya existe recién creada)
                 render();
@@ -3735,6 +3815,8 @@
                 state.players = finalPlayers;
                 state.currentPlayerIndex = gs.full_state?.currentPlayerIndex ?? 0;
 
+                // NEW: Guardar código de sala en perfil si tienes cuenta
+                await saveLastRoomCode(code);
                 subscribeToRoom(code);
                 saveState(true);
                 render();
@@ -3826,9 +3908,37 @@
 
         function leaveRoom() {
             state.roomState = null;
+            state.roomCode = null;
             if (realtimeChannel) { realtimeChannel.unsubscribe(); realtimeChannel = null; }
             saveState();
             changeView('welcome');
+        }
+        
+        function resetRoomAndChangeView() {
+            // Limpiar sala actual pero mantener el usuario/jugadores
+            state.roomState = null;
+            state.roomCode = null;
+            if (realtimeChannel) { realtimeChannel.unsubscribe(); realtimeChannel = null; }
+            saveState();
+            changeView('ultimaCarta');
+        }
+        
+        async function rejoinLastRoom() {
+            // Intentar reconectarse a la última sala guardada
+            if (!state.user) return showToast('⚠️ Debés iniciar sesión');
+            const lastRoom = state.user.user_metadata?.last_room_code;
+            if (!lastRoom) return showToast('⚠️ No hay sala guardada');
+            
+            const username = state.user.email.split('@')[0];
+            // Usar joinRoom pero con el código guardado
+            const codeInput = document.getElementById('room-code-input');
+            const nameInput = document.getElementById('guest-name-input');
+            if (codeInput) codeInput.value = lastRoom;
+            if (nameInput) nameInput.value = username;
+            
+            // Cambiar a roomLobby y esperar a que se renderice, luego join
+            changeView('roomLobby');
+            setTimeout(() => joinRoom(), 300);
         }
 
         function reiniciarRetoCadena() {
