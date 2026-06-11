@@ -1,0 +1,131 @@
+﻿Reglamento Oficial: La ├Ültima Carta V3 
+Un juego de cartas, estrategia, riesgo y tragos dise├▒ado para elevar la competitividad de las 
+reuniones de forma din├ímica, equilibrada y divertida. Este reglamento define las bases oficiales 
+del juego. 
+1. Estructura y Preparaci├│n 
+ÔùÅÔÇï Jugadores: Dise├▒ado idealmente para 4 jugadores (ejemplo base), aunque adaptable a 
+m├ís. 
+ÔùÅÔÇï Duraci├│n del Torneo: Se juegan exactamente 3 turnos completos por jugador. Un turno 
+consiste en enfrentarse de manera consecutiva a la escalera de 4 cartas. 
+ÔùÅÔÇï La Baraja: Se utiliza un mazo est├índar de 52 cartas, removiendo completamente los 
+cuatro Ases (quedando un total de 48 cartas). El valor de las figuras es: J = 11, Q = 12, K = 
+13. 
+ÔùÅÔÇï Marcador Inicial: Todos los jugadores inician el torneo con un puntaje de -1 punto en la 
+tabla general. 
+2. La Regla del Cobarde (Antes de empezar el turno) 
+En cada turno, antes de que el Dealer (repartidor) tire la primera carta de la escalera, el jugador 
+activo tiene la opci├│n de declarar en voz alta: "No juego". 
+ÔùÅÔÇï Consecuencia: El jugador no suma ni resta puntos en la tabla general (se queda con el 
+puntaje que tra├¡a), pero debe tomar 1 trago obligatorio de inmediato por abandonar. El 
+turno pasa al siguiente jugador. 
+3. El Turno Base: La Escalera del Riesgo 
+Si el jugador decide jugar su turno, se enfrentar├í a una secuencia consecutiva de 4 cartas con 
+valores de puntos sucesivos. El castigo por fallar cualquier carta siempre est├í estandarizado 
+para mantener el juego fluido y amigable: 
+Carta 
+Desaf├¡o / Atributo 
+a Adivinar 
+Puntos de Acierto 
+Castigo de Tragos 
+(Fallo) 
+  
+Carta 1 
+┬┐Par o Impar? (J, K 
++1 Punto 
+1 Trago 
+Carta 
+Desaf├¡o / Atributo 
+a Adivinar 
+Puntos de Acierto 
+Castigo de Tragos 
+(Fallo) 
+  
+son impares; Q es 
+par) 
+Carta 2 
+┬┐Mayor o Menor? 
+(Respecto a la 
+Carta 1) 
++2 Puntos 
+1 Trago 
+Carta 3 
+┬┐Color? (Rojo o 
+Negro) 
++3 Puntos 
+1 Trago 
+Carta 4 
+┬┐Palo? (ÔÖú´©Å Tr├®bol, ÔÖª´©Å 
+Diamante, ÔÖÑ´©Å 
+Coraz├│n, ÔÖá´©Å Pica) 
++4 Puntos 
+1 Trago 
+A. Si el jugador ACIERTA la carta: 
+ÔùÅÔÇï Suma los puntos correspondientes a esa carta en su marcador general del torneo. 
+ÔùÅÔÇï Mitigaci├│n de Tragos: Se le resta 1 trago de los que deba tomarse (en caso de que tuviera 
+tragos acumulados por fallos previos en ese mismo turno). 
+ÔùÅÔÇï Regla del L├¡mite de Tragos: El acumulado de tragos del jugador nunca puede ser menor 
+a 0. El m├¡nimo de tragos pendientes siempre ser├í 0 (no se pueden acumular "cr├®ditos" de 
+tragos). 
+ÔùÅÔÇï El jugador puede decidir Plantarse con los puntos acumulados y pasar el turno, o continuar 
+arriesg├índose con la siguiente carta. 
+B. Si el jugador PIERDE la carta: 
+No suma los puntos de esa carta, su avance por la escalera se detiene y acumula 
+inmediatamente el castigo est├índar de 1 trago. En ese instante, debe elegir su camino en la 
+Opci├│n de Riesgo. 
+4. La Opci├│n de Riesgo: "Recuperar o Hundirse" 
+Al fallar una carta de la escalera, el jugador tiene derecho a elegir uno de los siguientes dos 
+caminos antes de dar por terminado su turno: 
+1.ÔÇï Aceptar la Derrota (Camino Seguro): El jugador asume el fallo. Se toma el trago 
+correspondiente (1 trago), no suma puntos por la carta fallada y su turno termina. 
+2.ÔÇï Arriesgarse continuando la Escalera (La Revancha): El jugador decide arriesgar el todo 
+por el todo. Para salvarse, debe continuar obligatoriamente con la carta que segu├¡a en 
+la escalera. Los puntos en juego (para ganar o perder) corresponden al valor de la carta 
+anterior a la que fall├│: 
+ÔùïÔÇï Si GANA la carta de revancha: 
+ÔûáÔÇï Se revierte el trago: El castigo de 1 trago acumulado en el fallo anterior se 
+cancela por completo (vuelve a 0 y no toma nada). 
+ÔûáÔÇï Gana los puntos de la carta anterior: Suma a la tabla general los puntos 
+equivalentes al valor de la carta anterior a la que fall├│. 
+ÔùïÔÇï Si PIERDE la carta de revancha: 
+ÔûáÔÇï Acumula otro trago: Suma 1 trago de castigo extra por el nuevo fallo de revancha 
+(acumulando un total de 2 tragos). 
+ÔûáÔÇï Pierde los puntos de la carta anterior: Se le restan directamente de la tabla 
+general los puntos equivalentes al valor de la carta anterior a la que fall├│. 
+Ejemplos Pr├ícticos de la Revancha (Siempre se gana o pierde por 1 
+trago en cada paso): 
+ÔùÅÔÇï Ejemplo con la Carta 3 (Fallo en la carta de 3 puntos): Si el jugador falla la Carta 3, 
+acumula 1 trago. Si decide arriesgarse, debe jugar la Carta 4. Como la carta anterior a la 
+que fall├│ es la Carta 2 (que vale 2 puntos): 
+ÔùïÔÇï Si gana la Carta 4: Cancela el trago acumulado (toma 0 tragos) y gana +2 puntos. 
+ÔùïÔÇï Si pierde la Carta 4: Acumula otro trago (toma un total de 2 tragos) y se le restan -2 
+puntos en la tabla general. 
+ÔùÅÔÇï Ejemplo con la Carta 2 (Fallo en la carta de 2 puntos): Si falla la Carta 2, acumula 1 
+trago. Si se arriesga, juega la Carta 3. La carta anterior a la que fall├│ es la Carta 1 (1 punto): 
+ÔùïÔÇï Si gana la Carta 3: Cancela el trago (toma 0 tragos) y gana +1 punto. 
+ÔùïÔÇï Si pierde la Carta 3: Acumula otro trago (toma un total de 2 tragos) y se le resta -1 
+punto en la tabla general. 
+ÔùÅÔÇï Ejemplo con la Carta 1 (Fallo en la carta de 1 punto): Si falla la Carta 1, acumula 1 trago. 
+Si se arriesga, juega la Carta 2. Al no existir una carta previa en la secuencia, se juega por 
+el valor de 1 punto: 
+ÔùïÔÇï Si gana la Carta 2: Cancela el trago y gana +1 punto. 
+ÔùïÔÇï Si pierde la Carta 2: Acumula otro trago (toma un total de 2 tragos) y se le resta -1 
+punto en la tabla general. 
+ÔùÅÔÇï ÔÜá´©Å L├¡mite de la Escalera (Carta 4): Si un jugador falla la Carta 4, no tiene opci├│n de 
+revancha, ya que no hay una carta posterior en la secuencia. Debe aceptar la derrota (toma 
+1 trago y su turno finaliza). 
+5. Final del Torneo y Clasificaci├│n 
+Una vez que todos los jugadores han completado sus 3 turnos respectivos frente a la escalera, 
+se hace el recuento final de puntos de la tabla general para definir el podio: 
+­ƒÑç El Ganador (Mayor puntaje acumulado): 
+ÔùÅÔÇï Es consagrado campe├│n del torneo. 
+ÔùÅÔÇï Tiene el poder absoluto de asignar 4 tragos (equivalente a la cantidad total de jugadores) 
+entre los dem├ís participantes, pudiendo repartirlos como guste. 
+ÔùÅÔÇï Empate en la cima: Si hay empate entre dos o m├ís ganadores, estos dividen el premio 
+equitativamente y reparten sus tragos asignados, O cada uno se toma un trago de honor 
+para celebrar juntos la victoria. 
+­ƒÆÇ El Perdedor (Menor puntaje acumulado): 
+ÔùÅÔÇï Queda en el ├║ltimo lugar del torneo. 
+ÔùÅÔÇï Debe tomarse 1 trago obligatorio de castigo final. 
+ÔùÅÔÇï Empate en el s├│tano: Si hay empate en el ├║ltimo lugar, cada uno de los jugadores 
+empatados en el puntaje m├ís bajo debe tomarse 1 trago obligatorio completo sin 
+excepci├│n. 

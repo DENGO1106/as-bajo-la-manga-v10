@@ -533,7 +533,7 @@
             return { error: 'max attempts reached' };
         }
 
-        let state = {
+        var state = {
             retoCadena: {
                 currentChain: [],
                 usedRetos: [],
@@ -3192,6 +3192,8 @@
             try {
                 if (window.supabase) {
                     supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                    // Backwards compatibility: some helpers reference window.supabaseClient
+                    window.supabaseClient = supabaseClient;
                     console.log('✅ Supabase conectado');
                 }
             } catch(e) { console.warn('Supabase no disponible:', e); }
