@@ -14,6 +14,17 @@
     <meta name="apple-mobile-web-app-title" content="ABLM">
     <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🔥</text></svg>">
     
+        <script>
+            // Safe storage shim for environments that throw on access
+            try {
+                void window.sessionStorage;
+                void window.localStorage;
+            } catch (e) {
+                Object.defineProperty(window, 'sessionStorage', { value: { getItem: () => null, setItem: () => {}, removeItem: () => {} } });
+                Object.defineProperty(window, 'localStorage', { value: { getItem: () => null, setItem: () => {}, removeItem: () => {} } });
+                console.warn('Storage shim enabled in head');
+            }
+        </script>
         <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
@@ -521,6 +532,8 @@
             }
             return { error: 'max attempts reached' };
         }
+
+        let state = {
             retoCadena: {
                 currentChain: [],
                 usedRetos: [],
@@ -529,7 +542,7 @@
 
             // Dilema del Rey
             dilemaRey: {
-                currentDilema: null,
+                currentDilemma: null,
                 dilemaIndex: 0,
                 votesA: 0,
                 votesB: 0
@@ -2892,7 +2905,13 @@
 
 
         function render() {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            if (typeof window.scrollTo === 'function') {
+                try {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                } catch (e) {
+                    console.warn('scrollTo not supported in this environment:', e);
+                }
+            }
             const container = document.getElementById('game-container');
             const headerTitle = document.getElementById('header-title');
             const backBtn = document.getElementById('back-btn');
