@@ -3270,23 +3270,36 @@
         // ========================================
         async function checkSession() {
             if (!supabaseClient) return;
-            const { data: { session } } = await supabaseClient.auth.getSession();
-            state.user = session ? session.user : null;
-            
-            if (state.user) {
-                const savedPlayers = state.user.user_metadata?.saved_players || [];
-                if (savedPlayers.length >= 2 && state.players.length < 2) {
-                    state.players = JSON.parse(JSON.stringify(savedPlayers));
-                    state.view = 'menu';
-                    saveState();
+            try {
+                const { data: { session }, error } = await supabaseClient.auth.getSession();
+                if (error) {
+                    console.warn('checkSession error:', error);
+                    return;
                 }
-                // Auto-aplicar apodo de juego si no hay nombre local
-                const nickname = state.user.user_metadata?.game_nickname;
-                if (nickname && !localStorage.getItem('localPlayerName')) {
-                    localStorage.setItem('localPlayerName', nickname);
+                state.user = session ? session.user : null;
+                
+                if (state.user) {
+                    const savedPlayers = state.user.user_metadata?.saved_players || [];
+                    if (savedPlayers.length >= 2 && state.players.length < 2) {
+                        state.players = JSON.parse(JSON.stringify(savedPlayers));
+                        state.view = 'menu';
+                        saveState();
+                    }
+                    // Auto-aplicar apodo de juego si no hay nombre local
+                    const nickname = state.user.user_metadata?.game_nickname;
+                    if (nickname && !localStorage.getItem('localPlayerName')) {
+                        localStorage.setItem('localPlayerName', nickname);
+                    }
                 }
+                saveState();
+                render();
+            } catch(e) {
+                console.warn('checkSession exception:', e);
             }
-            
+        }
+        
+        function setupAuthListener() {
+            if (!supabaseClient) return;
             supabaseClient.auth.onAuthStateChange((_event, session) => {
                 state.user = session ? session.user : null;
                 if (state.user && state.players.length < 2) {
@@ -3371,12 +3384,20 @@
             const password = document.getElementById('auth-password').value.trim();
             if (!username || !password) { showToast('⚠️ Llená todos los campos'); return; }
             
-            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-            if (error) {
-                showToast('❌ Error: ' + error.message);
-            } else {
+            try {
+                const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+                if (error) {
+                    showToast('❌ Error: ' + error.message);
+                    return;
+                }
+                // Update state with authenticated user
+                await checkSession();
                 showToast('✅ Sesión iniciada');
-                changeView('menu');
+                // Trigger UI update
+                render();
+            } catch (e) {
+                console.error('signInWithSupabase exception:', e);
+                showToast('❌ Error: ' + (e.message || 'Error desconocido'));
             }
         }
 
@@ -3388,11 +3409,16 @@
             const password = document.getElementById('auth-password').value.trim();
             if (!username || !password) { showToast('⚠️ Llená todos los campos'); return; }
             
-            const { data, error } = await supabaseClient.auth.signUp({ email, password });
-            if (error) {
-                showToast('❌ Error: ' + error.message);
-            } else {
+            try {
+                const { data, error } = await supabaseClient.auth.signUp({ email, password });
+                if (error) {
+                    showToast('❌ Error: ' + error.message);
+                    return;
+                }
                 showToast('✅ Cuenta creada. Por favor, iniciá sesión.');
+            } catch (e) {
+                console.error('signUpWithSupabase exception:', e);
+                showToast('❌ Error: ' + (e.message || 'Error desconocido'));
             }
         }
 
@@ -4034,6 +4060,7 @@
 
         // Initialize Supabase now that consts are defined
         initSupabase();
+        setupAuthListener();
         checkSession();
         if (state.roomCode) { conectarSala(state.roomCode); }
     </script>
