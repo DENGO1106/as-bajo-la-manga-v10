@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "Juego de cartas interactivo para tomar",
   "scripts": {
-    "build": "echo 'Sitio estático, sin build necesario'"
+    "build": "echo 'Sitio estático, sin build necesario'",
+    "start": "node serve.js"
   },
   "dependencies": {
     "jsdom": "^29.1.1"
