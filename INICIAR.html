@@ -775,6 +775,7 @@
 
         // Debounced remote sync: write local storage immediately, schedule remote sync
         let _saveStateRemoteTimer = null;
+        let _lastRemoteSyncAt = 0;
         async function saveState(isRemote = false) {
             if (state.user) {
                 localStorage.setItem('as_bajo_la_manga_state', JSON.stringify(state));
@@ -790,6 +791,10 @@
                 // schedule remote sync with debounce
                 clearTimeout(_saveStateRemoteTimer);
                 _saveStateRemoteTimer = setTimeout(async () => {
+                    // Evitar pisar un estado remoto recién recibido
+                    if (Date.now() - _lastRemoteSyncAt < 600) return;
+                    // En sala online, solo quien tiene el turno debería subir cambios de juego
+                    if (state.roomState && !isLocalPlayerTurn()) return;
                     const fullState = { ...state };
                     delete fullState.user;
                     delete fullState.roomState; // no sincronizar identidad del dispositivo
@@ -857,16 +862,40 @@
             }
         }
 
+        function getPlayerName(player) {
+            if (!player) return '';
+            return String(typeof player === 'string' ? player : (player.name || '')).trim();
+        }
+
+        function namesMatch(a, b) {
+            const na = (typeof a === 'string' ? a : getPlayerName(a)).trim();
+            const nb = (typeof b === 'string' ? b : getPlayerName(b)).trim();
+            if (!na || !nb) return false;
+            return na.toLowerCase() === nb.toLowerCase();
+        }
+
         function getLocalPlayerName() {
-            return localStorage.getItem('localPlayerName') || (state.user && state.user.user_metadata && state.user.user_metadata.game_nickname) || null;
+            if (state.roomState) {
+                if (state.roomState.isHost && state.roomState.hostName) return String(state.roomState.hostName).trim();
+                if (!state.roomState.isHost && state.roomState.guestName) return String(state.roomState.guestName).trim();
+            }
+            const stored = localStorage.getItem('localPlayerName');
+            if (stored) return String(stored).trim();
+            const nickname = state.user && state.user.user_metadata && state.user.user_metadata.game_nickname;
+            return nickname ? String(nickname).trim() : null;
+        }
+
+        function getCurrentTurnPlayerName() {
+            if (!state.players || state.players.length === 0) return '';
+            const idx = state.currentPlayerIndex ?? 0;
+            return getPlayerName(state.players[idx]);
         }
 
         function isLocalPlayerTurn() {
             try {
                 const localName = getLocalPlayerName();
                 if (!localName || !state.players || state.players.length === 0) return false;
-                const idx = state.currentPlayerIndex ?? 0;
-                return String(state.players[idx]?.name || '').trim() === String(localName).trim();
+                return namesMatch(localName, state.players[state.currentPlayerIndex ?? 0]);
             } catch (e) { return false; }
         }
 
@@ -947,9 +976,13 @@
 
         // Wrapper that acquires lock, runs action, and releases it
         async function withTurnLock(actionFn) {
+            if (!isLocalPlayerTurn()) {
+                const turnName = getCurrentTurnPlayerName() || 'otro jugador';
+                showToast(`⚠️ No es tu turno — sigue ${turnName}`);
+                vibrate(100);
+                return;
+            }
             if (!state.roomCode || !supabaseClient) {
-                // offline mode -> enforce local turn only
-                if (!isLocalPlayerTurn()) { showToast('⚠️ No es tu turno'); vibrate(100); return; }
                 actionFn();
                 return;
             }
@@ -1735,8 +1768,7 @@
                         <div class="flex-grow flex items-center justify-center text-center w-full px-2 mb-6">
                             ${(() => {
                                 if (card.cat === 'mision_oculta') {
-                                    const localName = localStorage.getItem('localPlayerName');
-                                    const isMyTurn = (!state.roomState) || (localName === (currentPlayer?.name || currentPlayer));
+                                    const isMyTurn = (!state.roomState) || isLocalPlayerTurn();
                                     if (!isMyTurn) {
                                         return `
                                             <div class="flex flex-col items-center justify-center opacity-90">
@@ -2980,11 +3012,11 @@
                 container.innerHTML = views.welcome();
             }
 
-            // Sincronización UI - Bloqueo de Turnos para Salas Sincronizadas
-            if (state.roomState && state.roomState.code && ['sinexcusas','toxic','quienEsMasGame','bomba','dilemaRey','mimicaExpress','retoCadena','poker'].includes(state.view)) {
+            // Sincronización UI - Indicador de turno para salas online (sin bloquear las cartas)
+            const inOnlineRoom = !!(state.roomCode || state.roomState?.code);
+            if (inOnlineRoom && state.roomState && ['sinexcusas','toxic','quienEsMasGame','bomba','dilemaRey','mimicaExpress','retoCadena','poker'].includes(state.view)) {
                 let isMyTurn = true;
                 let currentPlayerName = '';
-                const localName = localStorage.getItem('localPlayerName');
                 const isHost = state.roomState.isHost;
 
                 // Detectar modo de configuración según el juego
@@ -2993,19 +3025,18 @@
 
                 if (isSetupMode) {
                     isMyTurn = isHost;
-                    currentPlayerName = state.roomState.hostName;
+                    currentPlayerName = state.roomState.hostName || getPlayerName(state.players?.[0]);
                 } else {
-                    currentPlayerName = state.players[state.currentPlayerIndex]?.name || '';
-                    isMyTurn = (localName === currentPlayerName);
+                    currentPlayerName = getCurrentTurnPlayerName();
+                    isMyTurn = isLocalPlayerTurn();
                 }
 
-                if (!isMyTurn) {
+                if (!isMyTurn && currentPlayerName) {
                     container.innerHTML += `
-                        <div class="fixed inset-0 z-[100] flex items-end justify-center pb-[15vh] pointer-events-auto" style="background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(3px);">
-                            <div class="glass p-5 rounded-3xl border border-amber-500/30 text-center shadow-2xl animate-pulse">
-                                <span class="text-4xl mb-2 block drop-shadow-lg">⏳</span>
-                                <p class="text-white font-black text-lg uppercase tracking-widest text-shadow">Turno de ${currentPlayerName}</p>
-                                <p class="text-amber-400 font-bold text-xs mt-1 uppercase tracking-widest">Espera a que juegue</p>
+                        <div class="fixed top-20 left-0 right-0 z-[100] flex justify-center pointer-events-none px-4">
+                            <div class="glass px-5 py-3 rounded-2xl border border-amber-500/40 text-center shadow-xl max-w-sm w-full">
+                                <p class="text-amber-400 font-black text-sm uppercase tracking-widest">⏳ Sigue ${currentPlayerName}</p>
+                                <p class="text-slate-400 text-[10px] mt-1 uppercase tracking-wider">Podés ver la carta, pero no avanzar</p>
                             </div>
                         </div>
                     `;
@@ -3015,8 +3046,7 @@
             // Modal para misiones terminadas
             if (state.misionesTerminadas && state.misionesTerminadas.length > 0) {
                 const mision = state.misionesTerminadas[0];
-                const localName = localStorage.getItem('localPlayerName');
-                const isMyTurn = (localName === mision.jugador);
+                const isMyTurn = namesMatch(getLocalPlayerName(), mision.jugador);
                 
                 // Si estamos en un solo dispositivo (no en sala), el que evalúa es cualquiera.
                 // En sala, evalúa el que era dueño de la misión (o el host como fallback).
@@ -3837,10 +3867,17 @@
                     const savedRoomState = state.roomState; // identidad local (isHost, mi nombre, etc.)
                     const savedRoomCode  = state.roomCode;
 
+                    _lastRemoteSyncAt = Date.now();
+
                     if (gs.full_state) {
                         // Hay estado completo de juego: fusionar todo
                         Object.assign(state, gs.full_state);
-                    } else if (gs.players) {
+                    }
+                    if (gs.players) {
+                        state.players = gs.players;
+                        if (state.roomState) state.roomState.players = gs.players;
+                    }
+                    if (!gs.full_state && gs.players) {
                         // Solo hay lista de jugadores (sala en espera)
                         if (!state.roomState) state.roomState = savedRoomState || {};
                         state.roomState.players = gs.players;
