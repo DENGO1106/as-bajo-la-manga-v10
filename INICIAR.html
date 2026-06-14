@@ -776,34 +776,46 @@
         // Debounced remote sync: write local storage immediately, schedule remote sync
         let _saveStateRemoteTimer = null;
         let _lastRemoteSyncAt = 0;
-        async function saveState(isRemote = false) {
+        async function saveState(isRemote = false, forceImmediateSync = false) {
             if (state.user) {
-                localStorage.setItem('as_bajo_la_manga_state', JSON.stringify(state));
-                sessionStorage.removeItem('as_bajo_la_manga_state');
+                localStorage.setItem('as_balo_la_manga_state', JSON.stringify(state));
+                sessionStorage.removeItem('as_balo_la_manga_state');
             } else {
-                sessionStorage.setItem('as_bajo_la_manga_state', JSON.stringify(state));
-                localStorage.removeItem('as_bajo_la_manga_state');
+                sessionStorage.setItem('as_balo_la_manga_state', JSON.stringify(state));
+                localStorage.removeItem('as_balo_la_manga_state');
             }
 
             // BUG FIX #2: usar roomCode O roomState.code (el que esté disponible)
             const activeRoomCode = state.roomCode || state.roomState?.code;
             if (activeRoomCode && !isRemote && window.supabaseClient) {
-                // schedule remote sync with debounce
-                clearTimeout(_saveStateRemoteTimer);
-                _saveStateRemoteTimer = setTimeout(async () => {
-                    // Evitar pisar un estado remoto recién recibido
-                    if (Date.now() - _lastRemoteSyncAt < 600) return;
-                    // En sala online, solo quien tiene el turno debería subir cambios de juego
-                    if (state.roomState && !isLocalPlayerTurn()) return;
+                if (forceImmediateSync) {
+                    // Immediate sync without debounce
                     const fullState = { ...state };
                     delete fullState.user;
-                    delete fullState.roomState; // no sincronizar identidad del dispositivo
+                    delete fullState.roomState;
                     try {
-                        const res = await casUpdateRoom(activeRoomCode, { game_state: { status: 'playing', players: state.players, full_state: fullState } });
-                        if (res && res.error) console.error('Supabase sync error:', res.error);
-                    } catch (e) { console.warn('saveState supabase error', e); }
+                        await casUpdateRoom(activeRoomCode, { game_state: { status: 'playing', players: state.players, full_state: fullState } });
+                        _lastRemoteSyncAt = Date.now();
+                    } catch (e) { console.warn('saveState immediate sync error', e); }
                     resetInactivityTimers();
-                }, 350);
+                } else {
+                    // schedule remote sync with debounce
+                    clearTimeout(_saveStateRemoteTimer);
+                    _saveStateRemoteTimer = setTimeout(async () => {
+                        // Evitar pisar un estado remoto recién recibido
+                        if (Date.now() - _lastRemoteSyncAt < 600) return;
+                        // En sala online, solo quien tiene el turno debería subir cambios de juego
+                        if (state.roomState && !isLocalPlayerTurn()) return;
+                        const fullState = { ...state };
+                        delete fullState.user;
+                        delete fullState.roomState; // no sincronizar identidad del dispositivo
+                        try {
+                            const res = await casUpdateRoom(activeRoomCode, { game_state: { status: 'playing', players: state.players, full_state: fullState } });
+                            if (res && res.error) console.error('Supabase sync error:', res.error);
+                        } catch (e) { console.warn('saveState supabase error', e); }
+                        resetInactivityTimers();
+                    }, 350);
+                }
             }
             // update UI indicator for lock owner
             try { updateTurnLockIndicator(); } catch (e) {}
@@ -1062,18 +1074,7 @@
             state.sinexcusas.index = 0;
             state.currentPlayerIndex = 0;
             state.sinexcusas.animationClass = 'card-enter';
-            
-            // In multiplayer, synchronize the initial state
-            if (state.roomCode && supabaseClient) {
-                const fullState = { ...state };
-                delete fullState.user;
-                delete fullState.roomState;
-                try {
-                    await casUpdateRoom(state.roomCode, { game_state: { status: 'playing', players: state.players, full_state: fullState } });
-                } catch (e) { console.warn('startSinExcusas sync error', e); }
-            }
-            
-            saveState(true); // save locally without re-syncing
+            saveState(false, state.roomCode && supabaseClient); // force immediate sync in multiplayer
             render();
         }
 
@@ -1152,18 +1153,7 @@
                 }
 
                 state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
-                
-                // Force immediate sync in multiplayer
-                if (state.roomCode && supabaseClient) {
-                    const fullState = { ...state };
-                    delete fullState.user;
-                    delete fullState.roomState;
-                    try {
-                        await casUpdateRoom(state.roomCode, { game_state: { status: 'playing', players: state.players, full_state: fullState } });
-                    } catch (e) { console.warn('internalDrawSinExcusas sync error', e); }
-                }
-                
-                saveState(true); // save locally without re-syncing
+                saveState(false, state.roomCode && supabaseClient); // force immediate sync in multiplayer
                 render();
             }
         }
@@ -2749,18 +2739,7 @@
             resetToxicDeck();
             state.toxicIndex = 0;
             state.currentPlayerIndex = 0;
-            
-            // In multiplayer, synchronize the initial state
-            if (state.roomCode && supabaseClient) {
-                const fullState = { ...state };
-                delete fullState.user;
-                delete fullState.roomState;
-                try {
-                    await casUpdateRoom(state.roomCode, { game_state: { status: 'playing', players: state.players, full_state: fullState } });
-                } catch (e) { console.warn('startToxicGame sync error', e); }
-            }
-            
-            saveState(true); // save locally without re-syncing
+            saveState(false, state.roomCode && supabaseClient); // force immediate sync in multiplayer
             render();
         }
 
@@ -2824,18 +2803,7 @@
                 } catch (e) { console.warn('save last toxic', e); }
 
                 state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
-                
-                // Force immediate sync in multiplayer
-                if (state.roomCode && supabaseClient) {
-                    const fullState = { ...state };
-                    delete fullState.user;
-                    delete fullState.roomState;
-                    try {
-                        await casUpdateRoom(state.roomCode, { game_state: { status: 'playing', players: state.players, full_state: fullState } });
-                    } catch (e) { console.warn('internalDrawToxic sync error', e); }
-                }
-                
-                saveState(true); // save locally without re-syncing
+                saveState(false, state.roomCode && supabaseClient); // force immediate sync in multiplayer
                 render();
             }
         }
@@ -2897,18 +2865,7 @@
                 } catch (e) { console.warn('save last poker', e); }
 
                 state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
-                
-                // Force immediate sync in multiplayer
-                if (state.roomCode && supabaseClient) {
-                    const fullState = { ...state };
-                    delete fullState.user;
-                    delete fullState.roomState;
-                    try {
-                        await casUpdateRoom(state.roomCode, { game_state: { status: 'playing', players: state.players, full_state: fullState } });
-                    } catch (e) { console.warn('internalDrawPoker sync error', e); }
-                }
-                
-                saveState(true); // save locally without re-syncing
+                saveState(false, state.roomCode && supabaseClient); // force immediate sync in multiplayer
                 render();
             }
         }
