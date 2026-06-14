@@ -1097,7 +1097,7 @@
             }
             internalDrawSinExcusas();
 
-            function internalDrawSinExcusas() {
+            async function internalDrawSinExcusas() {
                 // Ensure deck is initialized
                 if (!state.sinexcusas.deck || state.sinexcusas.deck.length === 0) {
                     resetSinExcusasDeck();
@@ -1152,7 +1152,18 @@
                 }
 
                 state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
-                saveState();
+                
+                // Force immediate sync in multiplayer
+                if (state.roomCode && supabaseClient) {
+                    const fullState = { ...state };
+                    delete fullState.user;
+                    delete fullState.roomState;
+                    try {
+                        await casUpdateRoom(state.roomCode, { game_state: { status: 'playing', players: state.players, full_state: fullState } });
+                    } catch (e) { console.warn('internalDrawSinExcusas sync error', e); }
+                }
+                
+                saveState(true); // save locally without re-syncing
                 render();
             }
         }
@@ -2813,7 +2824,18 @@
                 } catch (e) { console.warn('save last toxic', e); }
 
                 state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
-                saveState();
+                
+                // Force immediate sync in multiplayer
+                if (state.roomCode && supabaseClient) {
+                    const fullState = { ...state };
+                    delete fullState.user;
+                    delete fullState.roomState;
+                    try {
+                        await casUpdateRoom(state.roomCode, { game_state: { status: 'playing', players: state.players, full_state: fullState } });
+                    } catch (e) { console.warn('internalDrawToxic sync error', e); }
+                }
+                
+                saveState(true); // save locally without re-syncing
                 render();
             }
         }
@@ -2875,7 +2897,18 @@
                 } catch (e) { console.warn('save last poker', e); }
 
                 state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
-                saveState();
+                
+                // Force immediate sync in multiplayer
+                if (state.roomCode && supabaseClient) {
+                    const fullState = { ...state };
+                    delete fullState.user;
+                    delete fullState.roomState;
+                    try {
+                        await casUpdateRoom(state.roomCode, { game_state: { status: 'playing', players: state.players, full_state: fullState } });
+                    } catch (e) { console.warn('internalDrawPoker sync error', e); }
+                }
+                
+                saveState(true); // save locally without re-syncing
                 render();
             }
         }
