@@ -1057,12 +1057,23 @@
             state.sinexcusas.index = -1;
         }
 
-        function startSinExcusas() {
+        async function startSinExcusas() {
             resetSinExcusasDeck();
             state.sinexcusas.index = 0;
             state.currentPlayerIndex = 0;
             state.sinexcusas.animationClass = 'card-enter';
-            saveState();
+            
+            // In multiplayer, synchronize the initial state
+            if (state.roomCode && supabaseClient) {
+                const fullState = { ...state };
+                delete fullState.user;
+                delete fullState.roomState;
+                try {
+                    await casUpdateRoom(state.roomCode, { game_state: { status: 'playing', players: state.players, full_state: fullState } });
+                } catch (e) { console.warn('startSinExcusas sync error', e); }
+            }
+            
+            saveState(true); // save locally without re-syncing
             render();
         }
 
@@ -1087,6 +1098,11 @@
             internalDrawSinExcusas();
 
             function internalDrawSinExcusas() {
+                // Ensure deck is initialized
+                if (!state.sinexcusas.deck || state.sinexcusas.deck.length === 0) {
+                    resetSinExcusasDeck();
+                }
+
                 // Manejo de misiones activas (decrementar turnos)
                 if (state.misiones && state.misiones.length > 0) {
                     state.misiones.forEach(m => m.turnos--);
@@ -1499,6 +1515,9 @@
                     : TOXIC_CARDS.filter(c => state.toxicCategory.includes(c.cat) && !state.trash.toxic.includes(String(c.id))).length;
 
                 if (state.toxicIndex === -1) {
+                    const isHost = state.roomState?.isHost;
+                    const canInteract = !state.roomState || isHost;
+                    
                     return `
                         <div class="space-y-6 animate-fade-in pb-8 pt-4">
                             <!-- Header -->
@@ -1509,6 +1528,12 @@
                                 <h2 class="text-3xl font-extrabold gold-text">TOXIC CARDS</h2>
                                 <p class="text-slate-400 text-sm">Elegí las categorías que quieras jugar</p>
                             </div>
+
+                            ${!canInteract ? `
+                            <div class="glass p-4 rounded-2xl border border-amber-500/20 text-center">
+                                <p class="text-amber-400 text-sm font-bold">⏳ Esperando que el host configure el juego...</p>
+                            </div>
+                            ` : ''}
 
                             <!-- Contador dinámico -->
                             <div class="glass rounded-2xl px-6 py-3 flex items-center justify-center gap-3 border border-amber-500/20">
@@ -1527,8 +1552,8 @@
                                             ? TOXIC_CARDS.filter(c => !state.trash.toxic.includes(String(c.id))).length
                                             : TOXIC_CARDS.filter(c => c.cat === cat && !state.trash.toxic.includes(String(c.id))).length;
                                         return `
-                                        <button onclick="toggleToxicCategory('${cat.replace(/'/g, "\\'")}')"
-                                                class="w-full flex items-center gap-4 p-4 rounded-2xl border transition-all touch-feedback ripple
+                                        <button onclick="${canInteract ? `toggleToxicCategory('${cat.replace(/'/g, "\\'")}')` : ''}"
+                                                class="w-full flex items-center gap-4 p-4 rounded-2xl border transition-all ${canInteract ? 'touch-feedback ripple' : 'opacity-60 pointer-events-none'}
                                                        ${isActive
                                                            ? 'bg-amber-500/20 border-amber-400/60 shadow-lg shadow-amber-500/10'
                                                            : 'glass border-white/5 hover:border-amber-500/30'}">
@@ -1553,8 +1578,8 @@
                             </div>
 
                             <!-- Botón empezar -->
-                            <button onclick="startToxicGame()"
-                                    class="w-full bg-gold text-slate-950 font-black py-5 rounded-2xl text-lg uppercase shadow-lg shadow-amber-500/20 ripple touch-feedback ${cardCount === 0 ? 'opacity-40 pointer-events-none' : ''}">
+                            <button onclick="${canInteract ? 'startToxicGame()' : ''}"
+                                    class="w-full bg-gold text-slate-950 font-black py-5 rounded-2xl text-lg uppercase shadow-lg shadow-amber-500/20 ${canInteract ? 'ripple touch-feedback' : 'opacity-50 pointer-events-none'} ${cardCount === 0 ? 'opacity-40 pointer-events-none' : ''}">
                                 🔥 EMPEZAR (${cardCount} cartas)
                             </button>
                             <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
@@ -1566,6 +1591,8 @@
 
                 const card = state.toxicDeck[state.toxicIndex];
                 const currentPlayer = state.players[state.currentPlayerIndex];
+                const isHost = state.roomState?.isHost;
+                const canInteract = !state.roomState || isHost;
 
                 return `
                 <div class="space-y-8 animate-fade-in flex flex-col items-center">
@@ -1596,8 +1623,10 @@
                     </div>
 
                     <div class="flex w-full gap-4">
+                        ${canInteract ? `
                         <button onclick="resetToxicDeck(); vibrate(100); showToast('¡Mazo mezclado!');" class="flex-1 glass p-4 rounded-2xl btn-hover text-slate-400 font-bold uppercase tracking-wider text-xs ripple touch-feedback">Mezclar</button>
-                        <button onclick="drawToxicCard()" class="flex-[2] bg-gold text-slate-950 p-4 rounded-2xl font-black btn-hover text-lg uppercase tracking-tight ripple touch-feedback">Siguiente</button>
+                        ` : ''}
+                        <button onclick="drawToxicCard()" class="${canInteract ? 'flex-[2]' : 'flex-1'} bg-gold text-slate-950 p-4 rounded-2xl font-black btn-hover text-lg uppercase tracking-tight ripple touch-feedback">Siguiente</button>
                     </div>
                 </div>
                 `;
@@ -1627,6 +1656,8 @@
                 const card = state.pokerDeck[state.pokerIndex];
                 const isRed = ['♥️', '♦️'].includes(card.suit);
                 const currentPlayer = state.players[state.currentPlayerIndex];
+                const isHost = state.roomState?.isHost;
+                const canInteract = !state.roomState || isHost;
 
                 return `
                 <div class="space-y-8 animate-fade-in flex flex-col items-center">
@@ -1658,8 +1689,10 @@
                     </div>
 
                     <div class="flex w-full gap-4">
+                        ${canInteract ? `
                         <button onclick="resetPokerDeck(); vibrate(100); showToast('¡Baraja mezclada!');" class="flex-1 glass p-4 rounded-2xl btn-hover text-slate-400 font-bold uppercase tracking-wider text-xs ripple touch-feedback">Mezclar</button>
-                        <button onclick="drawPokerCard()" class="flex-[2] bg-red-600 text-white p-4 rounded-2xl font-black btn-hover text-lg uppercase tracking-tight shadow-lg shadow-red-500/20 ripple touch-feedback">Siguiente</button>
+                        ` : ''}
+                        <button onclick="drawPokerCard()" class="${canInteract ? 'flex-[2]' : 'flex-1'} bg-red-600 text-white p-4 rounded-2xl font-black btn-hover text-lg uppercase tracking-tight shadow-lg shadow-red-500/20 ripple touch-feedback">Siguiente</button>
                     </div>
                 </div>
                 `;
@@ -1696,6 +1729,9 @@
                     : SIN_EXCUSAS_CARDS.filter(c => sinCat.includes(c.cat) && !state.trash.sinexcusas.includes(String(c.id))).length;
 
                 if (state.sinexcusas.index === -1 || state.sinexcusas.index === undefined) {
+                    const isHost = state.roomState?.isHost;
+                    const canInteract = !state.roomState || isHost;
+                    
                     return `
                         <div class="space-y-6 animate-fade-in pb-8 pt-4">
                             <div class="text-center space-y-2">
@@ -1705,6 +1741,12 @@
                                 <h2 class="text-3xl font-extrabold text-cyan-400">SIN EXCUSAS</h2>
                                 <p class="text-slate-400 text-sm">Elegí las categorías que quieras jugar</p>
                             </div>
+
+                            ${!canInteract ? `
+                            <div class="glass p-4 rounded-2xl border border-cyan-500/20 text-center">
+                                <p class="text-cyan-400 text-sm font-bold">⏳ Esperando que el host configure el juego...</p>
+                            </div>
+                            ` : ''}
 
                             <div class="glass rounded-2xl px-6 py-3 flex items-center justify-center gap-3 border border-cyan-500/20">
                                 <span class="text-cyan-400 text-2xl font-black">${cardCount}</span>
@@ -1720,8 +1762,8 @@
                                         ? SIN_EXCUSAS_CARDS.filter(c => !state.trash.sinexcusas.includes(String(c.id))).length
                                         : SIN_EXCUSAS_CARDS.filter(c => c.cat === cat && !state.trash.sinexcusas.includes(String(c.id))).length;
                                     return `
-                                    <button onclick="toggleSinExcusasCategory('${cat}')"
-                                            class="w-full flex items-center gap-4 p-4 rounded-2xl border transition-all touch-feedback ripple
+                                    <button onclick="${canInteract ? `toggleSinExcusasCategory('${cat}')` : ''}"
+                                            class="w-full flex items-center gap-4 p-4 rounded-2xl border transition-all ${canInteract ? 'touch-feedback ripple' : 'opacity-60 pointer-events-none'}
                                                    ${isActive ? 'border-opacity-60' : 'glass border-white/5'}"
                                             style="${isActive ? `background:${color}22; border-color:${color}88;` : ''}">
                                         <div class="flex-1 text-left">
@@ -1736,8 +1778,8 @@
                                 `}).join('')}
                             </div>
 
-                            <button onclick="startSinExcusas()"
-                                    class="w-full bg-cyan-600 text-white font-black py-5 rounded-2xl text-lg uppercase shadow-lg shadow-cyan-500/20 ripple touch-feedback ${cardCount === 0 ? 'opacity-40 pointer-events-none' : ''}">
+                            <button onclick="${canInteract ? 'startSinExcusas()' : ''}"
+                                    class="w-full bg-cyan-600 text-white font-black py-5 rounded-2xl text-lg uppercase shadow-lg shadow-cyan-500/20 ${canInteract ? 'ripple touch-feedback' : 'opacity-50 pointer-events-none'} ${cardCount === 0 ? 'opacity-40 pointer-events-none' : ''}">
                                 🍻 EMPEZAR (${cardCount} cartas)
                             </button>
                             <button onclick="changeView('menu')" class="w-full glass p-4 rounded-2xl font-bold text-slate-400 touch-feedback">
@@ -1751,6 +1793,8 @@
                 if (!card) { state.sinexcusas.index = -1; saveState(); render(); return ''; }
                 const currentPlayer = state.players[state.currentPlayerIndex];
                 const cardColor = CAT_COLORS[card.cat] || '#22d3ee';
+                const isHost = state.roomState?.isHost;
+                const canInteract = !state.roomState || isHost;
 
                 return `
                 <div class="space-y-6 animate-fade-in flex flex-col items-center">
@@ -1794,8 +1838,10 @@
                     </div>
 
                     <div class="flex w-full gap-4">
+                        ${canInteract ? `
                         <button onclick="resetSinExcusasDeck(); vibrate(100); showToast('¡Mazo mezclado!');" class="flex-1 glass p-4 rounded-2xl btn-hover text-slate-400 font-bold uppercase tracking-wider text-xs ripple touch-feedback">Mezclar</button>
-                        <button onclick="drawSinExcusasCard()" class="flex-[2] text-white p-4 rounded-2xl font-black btn-hover text-lg uppercase tracking-tight shadow-lg ripple touch-feedback" style="background:${cardColor}; box-shadow: 0 10px 30px ${cardColor}44;">Siguiente</button>
+                        ` : ''}
+                        <button onclick="drawSinExcusasCard()" class="${canInteract ? 'flex-[2]' : 'flex-1'} text-white p-4 rounded-2xl font-black btn-hover text-lg uppercase tracking-tight shadow-lg ripple touch-feedback" style="background:${cardColor}; box-shadow: 0 10px 30px ${cardColor}44;">Siguiente</button>
                     </div>
                 </div>
                 `;
@@ -2688,11 +2734,22 @@
 
         // El listener de back-btn ahora está inline en el HTML para máxima compatibilidad
 
-        function startToxicGame() {
+        async function startToxicGame() {
             resetToxicDeck();
             state.toxicIndex = 0;
             state.currentPlayerIndex = 0;
-            saveState();
+            
+            // In multiplayer, synchronize the initial state
+            if (state.roomCode && supabaseClient) {
+                const fullState = { ...state };
+                delete fullState.user;
+                delete fullState.roomState;
+                try {
+                    await casUpdateRoom(state.roomCode, { game_state: { status: 'playing', players: state.players, full_state: fullState } });
+                } catch (e) { console.warn('startToxicGame sync error', e); }
+            }
+            
+            saveState(true); // save locally without re-syncing
             render();
         }
 
@@ -2725,6 +2782,11 @@
                 let filtered = TOXIC_CARDS;
                 if (!state.toxicCategory.includes('TODAS') && state.toxicCategory.length > 0) {
                     filtered = TOXIC_CARDS.filter(c => state.toxicCategory.includes(c.cat));
+                }
+
+                // Ensure deck is initialized
+                if (!state.toxicDeck || state.toxicDeck.length === 0) {
+                    state.toxicDeck = shuffleArray([...filtered]);
                 }
 
                 // record drawer before advancing turn
@@ -2786,6 +2848,11 @@
             render();
 
             async function internalDrawPoker() {
+                // Ensure deck is initialized
+                if (!state.pokerDeck || state.pokerDeck.length === 0) {
+                    state.pokerDeck = shuffleArray([...POKER_CARDS]);
+                }
+
                 // record drawer before advancing turn
                 const drawerIdx = state.currentPlayerIndex || 0;
 
