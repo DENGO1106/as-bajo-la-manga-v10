@@ -797,11 +797,12 @@
         // --- Turn lock using Firebase ---
         async function acquireTurnLock(timeoutMs = 30000) {
             const localName = getLocalPlayerName();
-            if (!localName || !state.roomCode || !firebaseDb) return false;
+            if (!localName || !state.roomCode || !window.firebaseDb) return false;
             try {
                 // Read current room, include last_activity for CAS
-                const { data: row, error } = await firebaseDb.from('rooms').select('game_state, last_activity').eq('code', state.roomCode).single();
-                if (error || !row) return false;
+                const snapshot = await window.firebaseDb.ref('rooms/' + state.roomCode).once('value');
+                const row = snapshot.val();
+                if (!row) return false;
                 const gs = row.game_state || {};
                 const currentLock = gs.full_state?.turnLock || gs.turnLock;
                 const now = Date.now();
@@ -834,10 +835,11 @@
 
         async function releaseTurnLock() {
             const localName = getLocalPlayerName();
-            if (!localName || !state.roomCode || !firebaseDb) return;
+            if (!localName || !state.roomCode || !window.firebaseDb) return;
             try {
-                const { data: row, error } = await firebaseDb.from('rooms').select('game_state, last_activity').eq('code', state.roomCode).single();
-                if (error || !row) return;
+                const snapshot = await window.firebaseDb.ref('rooms/' + state.roomCode).once('value');
+                const row = snapshot.val();
+                if (!row) return;
                 const gs = row.game_state || {};
                 const currentLock = gs.full_state?.turnLock || gs.turnLock;
                 if (!currentLock) return;
@@ -3793,7 +3795,7 @@
         }
 
         async function createRoom() {
-            if (!firebaseDb) { showToast('⚠️ Sin conexión a Firebase'); return; }
+            if (!window.firebaseDb) { showToast('⚠️ Sin conexión a Firebase'); return; }
             const nameInput = document.getElementById('host-name-input');
             const hostName = nameInput ? nameInput.value.trim() : '';
             if (!hostName) { showToast('✍️ Ingresá tu nombre'); return; }
@@ -3802,12 +3804,11 @@
             const gameState = { status: 'waiting', players: [{ name: hostName }] };
 
             try {
-                const { error } = await firebaseDb.from('rooms').insert({
-                    code,
+                await window.firebaseDb.ref('rooms/' + code).set({
+                    code: code,
                     game_state: gameState,
-                    expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString()
+                    last_activity: firebase.database.ServerValue.TIMESTAMP
                 });
-                if (error) { showToast('❌ Error: ' + error.message); return; }
 
                 // BUG FIX #1: guardar identidad del dispositivo
                 localStorage.setItem('localPlayerName', hostName);
@@ -3825,7 +3826,7 @@
         }
 
         async function joinRoom() {
-            if (!firebaseDb) { showToast('⚠️ Sin conexión a Firebase'); return; }
+            if (!window.firebaseDb) { showToast('⚠️ Sin conexión a Firebase'); return; }
             const codeInput = document.getElementById('room-code-input');
             const nameInput = document.getElementById('guest-name-input');
             const code = codeInput ? codeInput.value.trim().toUpperCase() : '';
@@ -3834,8 +3835,9 @@
             if (!guestName) { showToast('✍️ Ingresá tu nombre'); return; }
 
             try {
-                const { data, error } = await firebaseDb.from('rooms').select('*').eq('code', code).single();
-                if (error || !data) { showToast('❌ Sala no encontrada'); return; }
+                const snapshot = await window.firebaseDb.ref('rooms/' + code).once('value');
+                const data = snapshot.val();
+                if (!data) { showToast('❌ Sala no encontrada'); return; }
 
                 const gs = data.game_state;
                 // Permitir unirse aunque ya haya comenzado (para reconexiones)
@@ -3846,21 +3848,8 @@
 
                 if (!alreadyIn) {
                     try {
-                        // Use CAS to avoid race when multiple join at same time
-                        const row = await firebaseDb.from('rooms').select('last_activity, game_state').eq('code', code).single();
-                        const lastActivity = row.data ? row.data.last_activity : null;
                         const payload = { game_state: { ...gs, players: finalPlayers } };
-                        let updRes;
-                        if (lastActivity) {
-                            updRes = await firebaseDb.from('rooms').update(payload).eq('code', code).eq('last_activity', lastActivity);
-                            if (updRes.error) {
-                                console.warn('joinRoom CAS failed, fallback', updRes.error);
-                                updRes = await firebaseDb.from('rooms').update(payload).eq('code', code);
-                            }
-                        } else {
-                            updRes = await firebaseDb.from('rooms').update(payload).eq('code', code);
-                        }
-                        if (updRes.error) console.warn('joinRoom update error', updRes.error);
+                        await window.firebaseDb.ref('rooms/' + code).update(payload);
                     } catch (e) { console.warn('joinRoom firebase error', e); }
                 }
 
