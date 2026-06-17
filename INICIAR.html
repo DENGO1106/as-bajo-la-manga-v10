@@ -2980,6 +2980,8 @@
                 }
                 firebaseDb = firebase.database();
                 firebaseAuth = firebase.auth();
+                window.firebaseDb = firebaseDb;
+                window.firebaseAuth = firebaseAuth;
                 console.log('✅ Firebase conectado');
             } catch(e) { console.warn('Firebase no disponible:', e); }
         }
