@@ -3069,17 +3069,22 @@
         // FIREBASE AUTH & PROFILE
         // ========================================
         async function checkSession() {
-            // Manejado por onAuthStateChanged en setupAuthListener
+            if (!firebaseAuth) {
+                render();
+            }
         }
         
         function setupAuthListener() {
-            if (!firebaseAuth) return;
+            if (!firebaseAuth) {
+                render();
+                return;
+            }
             firebaseAuth.onAuthStateChanged((user) => {
                 if (user) {
                     firebaseDb.ref('users/' + user.uid).once('value').then(snapshot => {
                         const data = snapshot.val() || {};
                         state.user = user;
-                        state.user.user_metadata = data; // Emular estructura anterior
+                        state.user.user_metadata = data; 
                         
                         const savedPlayers = data.saved_players || [];
                         if (savedPlayers.length >= 2 && state.players.length < 2) {
@@ -3092,6 +3097,11 @@
                         }
                         saveState();
                         render();
+                    }).catch(err => {
+                        console.error("Firebase Database Error (Probablemente reglas de seguridad incorrectas):", err);
+                        state.user = user;
+                        saveState();
+                        render(); // Fallback para que cargue la UI igual
                     });
                 } else {
                     state.user = null;
